@@ -2,13 +2,23 @@
   "name": "test",
   "version": "1.0.50",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node src/test/index.ts",
+    "b:bot": "npx tsc src/bot/bot-script.ts --outDir public --outFile public/bot.js --module amd",
     "dev": "bun run --watch src/index.ts"
   },
+  "type": "module",
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/static": "^1.4.7",
+    "@types/tough-cookie": "^4.0.5",
+    "@yolk-oss/elysia-env": "^3.0.0",
+    "elysia": "latest",
+    "jsdom": "^27.3.0",
+    "node-telegram-bot-api": "^0.66.0"
   },
   "devDependencies": {
+    "@types/node-telegram-bot-api": "^0.64.13",
+    "@types/request": "^2.48.13",
+    "@types/telegram-web-app": "^9.1.1",
     "bun-types": "latest"
   },
   "module": "src/index.js"
