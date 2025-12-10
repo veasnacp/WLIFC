@@ -134,9 +134,14 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                   data.volume_record
                     .split('<br>')
                     .filter(Boolean)
-                    .map((v) => `\t\t\t${v}`)
+                    .map((v) => {
+                      const total = v
+                        .split('x')
+                        .reduce((acc, p) => acc * Number(p), 1);
+                      return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
+                    })
                     .join('\n'),
-                  '\n]'
+                  '\n\t\t\t]'
                 )
               : 'N/A'
           }\n`,
