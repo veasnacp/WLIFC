@@ -1,7 +1,8 @@
-import TelegramBot, { InlineKeyboardMarkup } from 'node-telegram-bot-api';
+import TelegramBot from 'node-telegram-bot-api';
 import { WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { chunkArray, isNumber } from '../utils/is';
+import { chunkArray } from '../utils/is';
+import path from 'path';
 
 interface MiniAppData {
   action: string;
@@ -9,11 +10,39 @@ interface MiniAppData {
   user_id: number | string;
 }
 
-export const LOADING_TEXT = '🔄 Processing your request... Please hold tight!';
+export const LOADING_TEXT =
+  'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
 
-const cacheData = new Map();
-const cacheKeys = new Set<string>();
+let DATA: Iterable<readonly [string, Data]> | undefined;
+const fileData = path.join(process.cwd(), 'public/data.json');
+const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
+if (isDev) {
+  const fs = process.getBuiltinModule('fs');
+  if (fs && fs.existsSync(fileData)) {
+    const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
+    if (dataString.startsWith('[') && dataString.endsWith(']')) {
+      try {
+        DATA = JSON.parse(dataString);
+      } catch {}
+    }
+  }
+}
+const cacheData = new Map<string, Data>(DATA);
 const config = new Map();
+
+export const deleteInlineKeyboardButton = {
+  text: 'Delete',
+  callback_data: 'delete',
+} as TelegramBot.InlineKeyboardButton;
+export function sendMessageOptions(options?: TelegramBot.SendMessageOptions) {
+  return {
+    ...options,
+    reply_markup: {
+      inline_keyboard: [[deleteInlineKeyboardButton]],
+      ...options?.reply_markup,
+    },
+  } as TelegramBot.SendMessageOptions;
+}
 
 export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/start/, (msg) => {
@@ -21,7 +50,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
 
     bot.sendMessage(
       chatId,
-      `Hello, ${msg.chat.first_name}!\nEnter item's number...`
+      `សួស្តី! ${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`
     );
   });
   bot.onText(/\/setCookie (.+)/, async (msg, match) => {
@@ -32,19 +61,31 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       bot.sendMessage(chatId, 'Successfully set new cookie');
     }
   });
+  let invalidMessage = { chadId: undefined, messageId: undefined } as Record<
+    'chadId' | 'messageId',
+    number | undefined
+  >;
+  bot.onText(/^(?!\/)(?!\d+$).+/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const text = msg.text?.trim();
+    if (!match || !text) {
+      return;
+    }
+    try {
+      const message = await bot.sendMessage(
+        chatId,
+        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊`
+      );
+      invalidMessage.chadId = chatId;
+      invalidMessage.messageId = message.message_id;
+    } catch (error) {
+      console.error('Error sending simple text message:', error);
+    }
+  });
 
   bot.onText(/\/clear/, async (msg) => {
     const chatId = msg.chat.id;
     try {
-      Array(cacheData.keys()).forEach((k) => {});
-      const keys = Array.from(cacheKeys.keys());
-      if (keys.length)
-        for (const k of keys) {
-          const [chatId, messageId] = k.split('|');
-          if (chatId && isNumber(messageId)) {
-            await bot.deleteMessage(chatId, Number(messageId));
-          }
-        }
       bot.sendMessage(chatId, '✅ Done!!!');
     } catch (error) {
       console.error('Error sending clear message:', error);
@@ -58,10 +99,6 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     if (action === 'delete' && chatId) {
       try {
         bot.deleteMessage(chatId, msg.message_id);
-        const cacheKey = chatId + '|' + msg.message_id;
-        if (cacheKeys.has(cacheKey)) {
-          cacheKeys.delete(cacheKey);
-        }
       } catch (error) {
         console.error('Error delete message:', error);
       }
@@ -109,16 +146,46 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       if (_data && typeof _data === 'object') {
         data = _data;
       } else {
-        data = await wl.getDataFromLogCode();
+        const wl_data = await wl.getDataFromLogCode();
+        const loadingMessage = await bot.sendMessage(chatId, 'loading...', {
+          parse_mode: 'Markdown',
+        });
+        await bot.deleteMessage(chatId, loadingMessage.message_id);
+        if (
+          wl_data &&
+          'message' in wl_data &&
+          wl_data.message === 'not found'
+        ) {
+          await bot.deleteMessage(chatId, loadingMsgId);
+          bot.sendMessage(
+            chatId,
+            `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
+            sendMessageOptions({
+              parse_mode: 'HTML',
+            })
+          );
+          return;
+        }
       }
       let photos = [] as string[];
       if (data && typeof data.warehousing_pic === 'string') {
         photos = wl.getPhotoFromData(data);
       }
       let caption: string | undefined;
+
       if (data) {
         if (!cacheData.get(logCode)) {
           cacheData.set(logCode, data);
+          if (isDev) {
+            const fs = process.getBuiltinModule('fs');
+            if (fs) {
+              const DATA = Array.from(cacheData.entries());
+              if (DATA.length)
+                fs.writeFileSync(fileData, JSON.stringify(DATA), {
+                  encoding: 'utf-8',
+                });
+            }
+          }
         }
         caption = ''.concat(
           '✅✅✅\n',
@@ -156,31 +223,21 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       })) as TelegramBot.InputMedia[];
       // Delete the temporary loading message
       await bot.deleteMessage(chatId, loadingMsgId);
-      
+
       if (caption && photos.length === 0) {
-        bot.sendMessage(chatId, `🏞### អត់មានរូបភាពទេ ###🏞 \n\n${caption}`, {
-          reply_markup: {
-            inline_keyboard: [[{ text: 'Delete', callback_data: 'delete' }]],
-          },
-        });
-        cacheKeys.add(chatId + '|' + msg.message_id);
+        bot.sendMessage(
+          chatId,
+          `🏞### អត់មានរូបភាពទេ ###🏞 \n\n${caption}`,
+          sendMessageOptions()
+        );
         return;
       }
 
       // Send the final generated photo
       if (photos.length === 1) {
-        await bot.sendPhoto(chatId, photos[0], {
-          reply_markup: {
-            inline_keyboard: [[{ text: 'Delete', callback_data: 'delete' }]],
-          },
-        });
+        await bot.sendPhoto(chatId, photos[0], sendMessageOptions());
         if (caption) {
-          bot.sendMessage(chatId, caption, {
-            reply_markup: {
-              inline_keyboard: [[{ text: 'Delete', callback_data: 'delete' }]],
-            },
-          });
-          cacheKeys.add(chatId + '|' + msg.message_id);
+          bot.sendMessage(chatId, caption, sendMessageOptions());
         }
       } else {
         const medias = chunkArray(media, 10);
@@ -192,21 +249,14 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                 `Successfully sent an album with ${sentMessages.length} items.`
               );
               if (caption && medias.length === i) {
-                bot.sendMessage(chatId, '', {
-                  reply_markup: {
-                    inline_keyboard: [
-                      [{ text: 'Delete', callback_data: 'delete' }],
-                    ],
-                  },
-                });
-                cacheKeys.add(chatId + '|' + msg.message_id);
+                bot.sendMessage(chatId, '', sendMessageOptions());
               }
             })
             .catch((error) => {
               console.error('Error sending media group:', error.message);
               bot.sendMessage(
                 chatId,
-                '❌ Sorry, I failed to send the photo album.'
+                '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
               );
             });
         }
@@ -229,7 +279,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       // Send the error message
       await bot.sendMessage(
         chatId,
-        '❌ Sorry, the generation failed. Please try again.'
+        // '❌ Sorry, the generation failed. Please try again.'
+        '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
       );
     }
   });
@@ -237,7 +288,12 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   // Listen for data sent back from the Mini App (via tg.sendData)
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    console.log('message', msg.text);
+    console.log('message', msg.text, 'by user:', msg.chat.first_name);
+    if (invalidMessage.chadId && invalidMessage.messageId) {
+      await bot.deleteMessage(invalidMessage.chadId, invalidMessage.messageId, {
+        parse_mode: 'Markdown',
+      });
+    }
     // Check if the message contains data from a Web App
     if (msg.web_app_data) {
       try {

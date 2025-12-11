@@ -59,48 +59,56 @@ export class WLLogistic {
           volume: [] as number[],
           volume_record: [] as string[],
           warehousing_pic: [] as string[],
-        }
-        let hasUpdateData = false
+        };
+        const dataUpdateKeys = Object.keys(
+          dataUpdate
+        ) as (keyof typeof dataUpdate)[];
+        let hasUpdateData = false;
         const data = dataList[0] || {};
-        if(Object.keys(data).length)
-        dataList.reduce((acc, d) => {
-          if(Object.keys(dataUpdate).some(k => k in d)){
-            hasUpdateData = true
-            Object.keys(dataUpdate).map(k => {
-              // @ts-ignore
-              dataUpdate[k as keyof typeof dataUpdate].push(k === 'volume_record' || k === 'warehousing_pic' ? d[k] : Number(d[k]))
-            })
-          }
-          return acc
-        }, {} as Data);
+        if (Object.keys(data).length)
+          dataList.reduce((acc, d) => {
+            if (dataUpdateKeys.some((k) => k in d)) {
+              hasUpdateData = true;
+              dataUpdateKeys.map((k) => {
+                const value =
+                  k === 'volume_record' || k === 'warehousing_pic'
+                    ? d[k]
+                    : Number(d[k]);
+                // @ts-ignore
+                dataUpdate[k].push(value);
+              });
+            }
+            return acc;
+          }, {} as Data);
         (Object.keys(data) as (keyof Data)[]).forEach((k) => {
           if (k in data_0 && !data[k] && data_0[k]) {
             // @ts-ignore
             data[k] = data_0[k];
           }
         });
-        // console.log(data)
-        if(hasUpdateData){
-          (Object.keys(dataUpdate) as (keyof typeof dataUpdate)[]).map(k => {
-              if(['volume_record' ,'warehousing_pic'].some(v => v === k)){
-                // @ts-ignore
-                data[k] = dataUpdate[k].join(k === 'warehousing_pic' ? ',' : '')
-              } else {
-                // @ts-ignore
-                data[k] = String(dataUpdate[k].reduce((acc,d)=> acc + d, 0))
-              }
-            })
-            // console.log('dataupdate', data)
+        if (hasUpdateData) {
+          dataUpdateKeys.map((k) => {
+            if (k === 'volume_record' || k === 'warehousing_pic') {
+              data[k] = dataUpdate[k].join(k === 'warehousing_pic' ? ',' : '');
+            } else {
+              // @ts-ignore
+              data[k] = String(dataUpdate[k].reduce((acc, d) => acc + d, 0));
+            }
+          });
         }
         return data;
+      } else {
+        return { message: 'not found' } as const;
       }
     } catch (error) {
-      throw new Error((error as Error).message);
+      console.error((error as Error).message);
+      return;
     }
   }
   getPhotoFromData(data: Data) {
     return data.warehousing_pic
-      .split(',').filter(Boolean)
+      .split(',')
+      .filter(Boolean)
       .map((p) => `${process.env.WL_PUBLIC_URL}/upload/${p}`);
   }
 }

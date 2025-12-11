@@ -28,15 +28,19 @@ const app = new Elysia()
     const logCode = params['*'];
     const isNumeric = isNumber(logCode);
     if (!isNumeric) {
-      return { message: 'Invalid ID' };
+      return { message: 'Invalid ID', errorCode: 1 };
     }
     const cookie = process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
     const data = await wl.getDataFromLogCode();
     let photos = [] as string[];
+    if (data && 'message' in data) {
+      return { message: data.message, errorCode: 1 };
+    }
     if (data && typeof data.warehousing_pic === 'string') {
       photos = wl.getPhotoFromData(data);
     }
+
     return {
       message: data ? 'successful' : 'failed',
       picLinks: photos,
@@ -66,7 +70,6 @@ const app = new Elysia()
   })
   .listen(port, ({ hostname, port }) => {
     console.log(`🦊 Elysia server listening at http://${hostname}:${port}`);
-    console.log(`Mini App URL: ${webAppUrl}`);
   });
 
 runBot(bot, { webAppUrl });
