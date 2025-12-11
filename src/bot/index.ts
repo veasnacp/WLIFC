@@ -1,7 +1,7 @@
 import TelegramBot, { InlineKeyboardMarkup } from 'node-telegram-bot-api';
 import { WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { isNumber } from '../utils/is';
+import { chunkArray, isNumber } from '../utils/is';
 
 interface MiniAppData {
   action: string;
@@ -126,7 +126,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
           `- ចំនួន: ${data.goods_number}\n`,
           `- ទម្ងន់: ${data.weight}kg\n`,
-          `- ម៉ែត្រគូបសរុប: ${data.volume}m³\n`,
+          `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
           `- ម៉ែត្រគូបផ្សេងគ្នា: ${
             data.volume_record?.trim()
               ? ''.concat(
@@ -156,6 +156,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       })) as TelegramBot.InputMedia[];
       // Delete the temporary loading message
       await bot.deleteMessage(chatId, loadingMsgId);
+      
+      if (caption && photos.length === 0) {
+        bot.sendMessage(chatId, `🏞### អត់មានរូបភាពទេ ###🏞 \n\n${caption}`, {
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Delete', callback_data: 'delete' }]],
+          },
+        });
+        cacheKeys.add(chatId + '|' + msg.message_id);
+        return;
+      }
 
       // Send the final generated photo
       if (photos.length === 1) {
@@ -165,7 +175,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           },
         });
         if (caption) {
-          bot.sendMessage(chatId, 'caption', {
+          bot.sendMessage(chatId, caption, {
             reply_markup: {
               inline_keyboard: [[{ text: 'Delete', callback_data: 'delete' }]],
             },
@@ -173,30 +183,33 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           cacheKeys.add(chatId + '|' + msg.message_id);
         }
       } else {
-        await bot
-          .sendMediaGroup(chatId, media)
-          .then((sentMessages) => {
-            console.log(
-              `Successfully sent an album with ${sentMessages.length} items.`
-            );
-            if (caption) {
-              bot.sendMessage(chatId, '', {
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: 'Delete', callback_data: 'delete' }],
-                  ],
-                },
-              });
-              cacheKeys.add(chatId + '|' + msg.message_id);
-            }
-          })
-          .catch((error) => {
-            console.error('Error sending media group:', error.message);
-            bot.sendMessage(
-              chatId,
-              '❌ Sorry, I failed to send the photo album.'
-            );
-          });
+        const medias = chunkArray(media, 10);
+        for (let i = 0; i < medias.length; i++) {
+          await bot
+            .sendMediaGroup(chatId, medias[i])
+            .then((sentMessages) => {
+              console.log(
+                `Successfully sent an album with ${sentMessages.length} items.`
+              );
+              if (caption && medias.length === i) {
+                bot.sendMessage(chatId, '', {
+                  reply_markup: {
+                    inline_keyboard: [
+                      [{ text: 'Delete', callback_data: 'delete' }],
+                    ],
+                  },
+                });
+                cacheKeys.add(chatId + '|' + msg.message_id);
+              }
+            })
+            .catch((error) => {
+              console.error('Error sending media group:', error.message);
+              bot.sendMessage(
+                chatId,
+                '❌ Sorry, I failed to send the photo album.'
+              );
+            });
+        }
       }
     } catch (error) {
       console.error('Error in image generation process:', error);
