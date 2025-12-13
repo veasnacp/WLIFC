@@ -12,6 +12,7 @@ interface MiniAppData {
 
 export const LOADING_TEXT =
   'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
+const MAX_CAPTION_LENGTH = 1024;
 
 let DATA: Iterable<readonly [string, Data]> | undefined;
 const fileData = path.join(process.cwd(), 'public/data.json');
@@ -61,6 +62,23 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       bot.sendMessage(chatId, 'Successfully set new cookie');
     }
   });
+  bot.onText(/\/getLogCodes/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (isDev) {
+      const fs = process.getBuiltinModule('fs');
+      if (fs && fs.existsSync(fileData)) {
+        const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
+        if (dataString.startsWith('[') && dataString.endsWith(']')) {
+          try {
+            DATA = JSON.parse(dataString);
+            if(DATA){
+              bot.sendMessage(chatId, Array.from(new Map(DATA).values()).map(d => '/' + Number(d.logcode)).join('\n'));
+            }
+          } catch {}
+        }
+      }
+    }
+  });
   let invalidMessage = { chadId: undefined, messageId: undefined } as Record<
     'chadId' | 'messageId',
     number | undefined
@@ -79,7 +97,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       invalidMessage.chadId = chatId;
       invalidMessage.messageId = message.message_id;
     } catch (error) {
-      console.error('Error sending simple text message:', error);
+      console.error('Error sending simple text message:', (error as Error).message);
     }
   });
 
@@ -88,7 +106,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     try {
       bot.sendMessage(chatId, '✅ Done!!!');
     } catch (error) {
-      console.error('Error sending clear message:', error);
+      console.error('Error sending clear message:', (error as Error).message);
     }
   });
 
@@ -96,12 +114,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const action = callbackQuery.data;
     const msg = callbackQuery.message;
     const chatId = msg?.chat.id;
-    if (action === 'delete' && chatId) {
-      try {
-        bot.deleteMessage(chatId, msg.message_id);
-      } catch (error) {
-        console.error('Error delete message:', error);
+    try {
+      if (action === 'delete' && chatId) {
+        try {
+          bot.deleteMessage(chatId, msg.message_id);
+        } catch (error) {
+          console.error('Error delete message:', (error as Error).message);
+        }
       }
+    } catch (error) {
+      console.error('Error delete message:', (error as Error).message);
     }
   });
 
@@ -120,8 +142,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     ) {
       bot.sendMessage(
         chatId,
-        'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។'.concat(
-          '\n',
+        'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
+          logCode.startsWith('1757') ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n' : '',
           '❌ Sorry, invalid code. Please try again.'
         )
       );
@@ -165,6 +187,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             })
           );
           return;
+        } else {
+          // @ts-ignore
+          data = wl_data;
         }
       }
       let photos = [] as string[];
@@ -181,7 +206,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             if (fs) {
               const DATA = Array.from(cacheData.entries());
               if (DATA.length)
-                fs.writeFileSync(fileData, JSON.stringify(DATA), {
+                fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
                   encoding: 'utf-8',
                 });
             }
@@ -212,8 +237,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                 )
               : 'N/A'
           }\n`,
-          `- ផ្សេងៗ: ${data.desc}\n`
-        );
+          `- ទំនិញ: ${data.goods_name}\n`,
+          `- ផ្សេងៗ: ${data.desc}\n`,
+        ).substring(0, MAX_CAPTION_LENGTH);
       }
 
       const media = photos.map((p, i) => ({
@@ -253,7 +279,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
               }
             })
             .catch((error) => {
-              console.error('Error sending media group:', error.message);
+              console.error('Error sending media group:', (error as Error).message);
               bot.sendMessage(
                 chatId,
                 '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
@@ -262,16 +288,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         }
       }
     } catch (error) {
-      console.error('Error in image generation process:', error);
+      console.error('Error in image generation process:', (error as Error).message);
 
       // Try to delete the loading message if it was sent successfully
       if (loadingMsgId) {
         try {
           await bot.deleteMessage(chatId, loadingMsgId);
-        } catch (deleteError) {
+        } catch (error) {
           console.warn(
             'Could not delete loading message on error:',
-            (deleteError as Error).message
+            (error as Error).message
           );
         }
       }
@@ -288,7 +314,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   // Listen for data sent back from the Mini App (via tg.sendData)
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    console.log('message', msg.text, 'by user:', msg.chat.first_name);
+    console.log('message', msg.text, 'by user:', msg.chat.first_name + (msg.chat.username ?`(${msg.chat.username})` : ''));
     if (invalidMessage.chadId && invalidMessage.messageId) {
       await bot.deleteMessage(invalidMessage.chadId, invalidMessage.messageId, {
         parse_mode: 'Markdown',
@@ -313,7 +339,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
 
         await bot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
       } catch (error) {
-        console.error('Error processing Web App data:', error);
+        console.error('Error processing Web App data:', (error as Error).message);
         await bot.sendMessage(
           chatId,
           'Received data from Mini App, but an error occurred while processing.'

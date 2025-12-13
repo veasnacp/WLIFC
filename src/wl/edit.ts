@@ -44,7 +44,7 @@ export class WLLogistic {
         method: 'GET',
       });
       const dataList = (await res.json()).data as Array<Data>;
-      const data_0 = dataList[0] || {};
+      const data_0 = dataList.find(d => d.logcode === String(this._currentLogCode)) as Data || {};
       const id = data_0.id;
       if (id) {
         const res = await fetch(this.apiUrlLogCode(id), {
@@ -89,7 +89,7 @@ export class WLLogistic {
         if (hasUpdateData) {
           dataUpdateKeys.map((k) => {
             if (k === 'volume_record' || k === 'warehousing_pic') {
-              data[k] = dataUpdate[k].join(k === 'warehousing_pic' ? ',' : '');
+              data[k] = [...new Set(dataUpdate[k])].join(k === 'warehousing_pic' ? ',' : '');
             } else {
               // @ts-ignore
               data[k] = String(dataUpdate[k].reduce((acc, d) => acc + d, 0));
