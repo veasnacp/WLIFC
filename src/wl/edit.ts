@@ -1,3 +1,4 @@
+import { removeDuplicateArray } from '../utils/is';
 import { Data } from './types';
 
 export class WLLogistic {
@@ -44,7 +45,10 @@ export class WLLogistic {
         method: 'GET',
       });
       const dataList = (await res.json()).data as Array<Data>;
-      const data_0 = dataList.find(d => d.logcode === String(this._currentLogCode)) as Data || {};
+      const data_0 =
+        (dataList.find(
+          (d) => d.logcode === String(this._currentLogCode)
+        ) as Data) || {};
       const id = data_0.id;
       if (id) {
         const res = await fetch(this.apiUrlLogCode(id), {
@@ -64,7 +68,7 @@ export class WLLogistic {
           dataUpdate
         ) as (keyof typeof dataUpdate)[];
         let hasUpdateData = false;
-        const data = dataList[0] || {};
+        const data = (dataList.find((d) => d.pid === id) as Data) || {};
         if (Object.keys(data).length)
           dataList.reduce((acc, d) => {
             if (dataUpdateKeys.some((k) => k in d)) {
@@ -89,7 +93,9 @@ export class WLLogistic {
         if (hasUpdateData) {
           dataUpdateKeys.map((k) => {
             if (k === 'volume_record' || k === 'warehousing_pic') {
-              data[k] = [...new Set(dataUpdate[k])].join(k === 'warehousing_pic' ? ',' : '');
+              data[k] = removeDuplicateArray(dataUpdate[k]).join(
+                k === 'warehousing_pic' ? ',' : ''
+              );
             } else {
               // @ts-ignore
               data[k] = String(dataUpdate[k].reduce((acc, d) => acc + d, 0));
@@ -101,7 +107,7 @@ export class WLLogistic {
         return { message: 'not found' } as const;
       }
     } catch (error) {
-      console.error((error as Error).message);
+      this.onError(error as Error);
       return;
     }
   }
@@ -111,4 +117,5 @@ export class WLLogistic {
       .filter(Boolean)
       .map((p) => `${process.env.WL_PUBLIC_URL}/upload/${p}`);
   }
+  onError(error: Error) {}
 }

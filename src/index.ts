@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
+import { html, Html } from '@elysiajs/html';
 import { WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
@@ -8,6 +9,7 @@ import { runBot } from './bot';
 const port: number = parseInt(process.env.PORT || '3000', 10);
 const token: string | undefined = process.env.BOT_TOKEN;
 const webAppUrl: string | undefined = process.env.WEB_APP_URL;
+const WL_PUBLIC_URL: string | undefined = process.env.WL_PUBLIC_URL;
 
 if (!token || !webAppUrl) {
   throw new Error(
@@ -24,6 +26,7 @@ const app = new Elysia()
       prefix: '/',
     })
   )
+  .use(html())
   .get('/wl/*', async ({ params }) => {
     const logCode = params['*'];
     const isNumeric = isNumber(logCode);
@@ -68,6 +71,62 @@ const app = new Elysia()
           } as typeof data),
     };
   })
+  .get('/static/*', async ({ path, query, set, redirect }) => {
+    if (WL_PUBLIC_URL) {
+      let queryString = Object.entries(query)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('&');
+      queryString = queryString ? `?${queryString}` : '';
+      const WL_URL = `${WL_PUBLIC_URL}${path}${queryString}`;
+      let type = '';
+      if (path.endsWith('.css')) {
+        set.headers['Content-Type'] = 'text/css';
+      } else if (path.endsWith('.js')) {
+        set.headers['Content-Type'] = 'text/javascript';
+        return redirect(WL_URL);
+      } else if (
+        ['png', 'jpg', 'jpeg', 'ico'].some((t) => {
+          type = t;
+          return path.endsWith('.' + type);
+        })
+      ) {
+        set.headers['Content-Type'] = `image/${type}`;
+        return redirect(WL_URL);
+      }
+      const data = await fetch(WL_URL)
+        .then(async (r) => await r.text())
+        .catch((err) => (err as Error).message);
+      return data;
+    }
+    return 'testing_static';
+  })
+  .get('/admin/*', async ({ path, query, html, set, redirect }) => {
+    if (WL_PUBLIC_URL) {
+      let queryString = Object.entries(query)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('&');
+      queryString = queryString ? `?${queryString}` : '';
+      const WL_URL = `${WL_PUBLIC_URL}${path}${queryString}`;
+      const data = await fetch(WL_URL)
+        .then(async (r) => await r.text())
+        .catch((err: Error) => {
+          console.error(err.message);
+          return err.message;
+        });
+      if (path.includes('/admin/verify/')) {
+        return redirect(WL_URL);
+      }
+      return data
+        .substring(0, 20)
+        .toLowerCase()
+        .trim()
+        .startsWith('<!doctype html>')
+        ? html(data)
+        : data;
+    }
+    return 'testing_admin';
+  })
+  .get('/wl-admin', async () => {})
   .listen(port, ({ hostname, port }) => {
     console.log(`🦊 Elysia server listening at http://${hostname}:${port}`);
   });

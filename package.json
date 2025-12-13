@@ -8,6 +8,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@elysiajs/html": "^1.4.0",
     "@elysiajs/static": "^1.4.7",
     "@types/tough-cookie": "^4.0.5",
     "@yolk-oss/elysia-env": "^3.0.0",
