@@ -2,11 +2,9 @@
   "name": "wl-checker",
   "version": "1.0.50",
   "scripts": {
-    "test": "node src/test/index.ts",
     "b:bot": "npx tsc src/bot/bot-script.ts --outDir public --outFile public/bot.js --module amd",
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build --compile --target bun --outfile server src/index.ts",
-    "start": "./server"
+    "build": "tsc"
   },
   "type": "module",
   "dependencies": {
@@ -15,14 +13,19 @@
     "@types/tough-cookie": "^4.0.5",
     "@yolk-oss/elysia-env": "^3.0.0",
     "elysia": "latest",
+    "express": "^5.2.1",
     "jsdom": "^27.3.0",
     "node-telegram-bot-api": "^0.66.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.1",
     "@types/node-telegram-bot-api": "^0.64.13",
     "@types/request": "^2.48.13",
     "@types/telegram-web-app": "^9.1.1",
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "module": "src/index.js"
 }
