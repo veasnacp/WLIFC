@@ -39,12 +39,11 @@ const currentDate = {
   },
 };
 let DATA: Iterable<readonly [string, Data]> | undefined;
-const fileData = path.join(
-  process.cwd(),
-  `public/data-${currentDate.month()}-${currentDate.day()}.json`
-);
+const publicPath = path.join(process.cwd(), 'public');
+const currentFileName = `data-${currentDate.month()}-${currentDate.day()}.json`;
+const fileData = path.join(publicPath, currentFileName);
+const fs = process.getBuiltinModule('fs');
 if (isDev) {
-  const fs = process.getBuiltinModule('fs');
   if (fs && fs.existsSync(fileData)) {
     const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
     if (dataString.startsWith('[') && dataString.endsWith(']')) {
@@ -473,7 +472,30 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/clear/, async (msg) => {
     const chatId = msg.chat.id;
     try {
-      bot.sendMessage(chatId, '✅ Done!!!');
+      let isError = false;
+      let message = '✅ Done!!!';
+      if (fs && !isDev) {
+        const files = fs.readdirSync(publicPath);
+        const filesToDelete = files.filter((file) => {
+          const isException = file === currentFileName;
+          const isJson = path.extname(file).toLowerCase() === '.json';
+
+          const fullPath = path.join(publicPath, file);
+          const isFile = fs.statSync(fullPath).isFile();
+          return isJson && isFile && !isException;
+        });
+        filesToDelete.forEach((file) => {
+          const filePath = path.join(publicPath, file);
+          try {
+            fs.unlinkSync(filePath);
+          } catch (err) {
+            isError = true;
+            message = `❌ Failed to delete ${file}: ` + (err as Error).message;
+            console.error(message);
+          }
+        });
+      }
+      bot.sendMessage(chatId, message);
     } catch (error) {
       console.error('Error sending clear message:', (error as Error).message);
     }
