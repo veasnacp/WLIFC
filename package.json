@@ -4,7 +4,7 @@
   "scripts": {
     "b:bot": "npx tsc src/bot/bot-script.ts --outDir public --outFile public/bot.js --module amd",
     "dev": "bun run --watch src/index.ts",
-    "build": "tsc"
+    "build": "tsc --build"
   },
   "type": "module",
   "dependencies": {
