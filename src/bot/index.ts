@@ -474,7 +474,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     try {
       let isError = false;
       let message = '✅ Done!!!';
-      if (fs && !!isDev) {
+      if (fs && !isDev) {
         const files = fs.readdirSync(publicPath);
         const filesToDelete = files.filter((file) => {
           const isException = file === currentFileName;
