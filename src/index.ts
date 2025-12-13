@@ -1,3 +1,3 @@
-import app from './express';
+import app from './elysia';
 
 export default app;
