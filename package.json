@@ -1,5 +1,5 @@
 {
-  "name": "test",
+  "name": "wl-checker",
   "version": "1.0.50",
   "scripts": {
     "test": "node src/test/index.ts",
