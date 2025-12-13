@@ -1,16 +1,9 @@
 {
-  "bunVersion": "1.x",
-  "functions": {
-    "api/index.ts": {
-      "runtime": "bun",
-      "memory": 1024,
-      "maxDuration": 30
-    }
-  },
-  "routes": [
+  "version": 2,
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "api/index.ts"
+      "source": "/(.*)",
+      "destination": "/api"
     }
   ]
 }
