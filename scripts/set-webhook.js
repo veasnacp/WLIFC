@@ -39,6 +39,11 @@ async function setTelegramWebhook() {
         if (data.ok) {
             console.log('✅ Telegram Webhook set successfully!');
             console.log(`Status: ${data.description}`);
+            if(process.env.NODE_ENV === 'development'){
+                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
+                const data = await res.json();
+                console.log(data)
+            }
         } else {
             console.error('❌ Failed to set Telegram Webhook.', data.description);
             // Optionally, exit with an error code if failure is critical
