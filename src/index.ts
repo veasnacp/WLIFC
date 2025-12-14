@@ -10,7 +10,7 @@ const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const port: number = parseInt(process.env.PORT || '3000', 10);
 const token: string | undefined = process.env.BOT_TOKEN;
 const WEBHOOK_PATH = `/webhook/${token}`;
-const WEBHOOK_URL = `https://${process.env.VERCEL_URL}/webhook`;
+const WEBHOOK_URL = `${process.env.VERCEL_URL}/webhook`;
 const webAppUrl: string | undefined = process.env.WEB_APP_URL;
 const WL_PUBLIC_URL: string | undefined = process.env.WL_PUBLIC_URL;
 
@@ -46,11 +46,13 @@ const app = new Elysia()
   .post(
     WEBHOOK_PATH,
     ({ body, set }) => {
-      try {
-        bot.processUpdate(body as TelegramBot.Update);
-      } catch (error) {
-        console.error('Error processing update:', error);
-      }
+      (async () => {
+        try {
+          bot.processUpdate(body as TelegramBot.Update);
+        } catch (error) {
+          console.error('Error in background processing:', error);
+        }
+      })();
       set.status = 200;
       return { ok: true };
     },
