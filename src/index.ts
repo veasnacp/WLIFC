@@ -20,7 +20,6 @@ if (!token || !webAppUrl) {
 
 // Initialize Telegram Bot
 const bot = new TelegramBot(token);
-runBot(bot, { webAppUrl });
 
 const app = new Elysia()
   .use(
@@ -29,9 +28,6 @@ const app = new Elysia()
     })
   )
   .use(html())
-  .get('/', ({ html }) => {
-    return html('<b>Welcome to WL Checker!!!</b>');
-  })
   .post(
     WEBHOOK_PATH,
     ({ body, set }) => {
@@ -47,6 +43,9 @@ const app = new Elysia()
       body: t.Any(),
     }
   )
+  .get('/', ({ html }) => {
+    return html('<b>Welcome to WL Checker!!!</b>');
+  })
   .get('/wl/*', async ({ params }) => {
     const logCode = params['*'];
     const isNumeric = isNumber(logCode);
@@ -152,4 +151,5 @@ const app = new Elysia()
   })
   .compile();
 
+runBot(bot, { webAppUrl });
 export default app;
