@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "types": ["bun-types"],
     "outDir": "./api",
-    "rootDir": "./src",
+    "rootDir": "./",
     "noEmitOnError": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -13,10 +13,11 @@
     "skipLibCheck": true
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
+    "src/**/*",
+    "api/index.ts"
   ],
   "exclude": [
     "node_modules",
+    "api/**/*.js"
   ]
 }
