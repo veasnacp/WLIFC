@@ -47,13 +47,13 @@ const app = new Elysia()
     WEBHOOK_PATH,
     ({ body, set }) => {
       (async () => {
+        set.status = 200;
         try {
           bot.processUpdate(body as TelegramBot.Update);
         } catch (error) {
           console.error('Error in background processing:', error);
         }
       })();
-      set.status = 200;
       return { ok: true };
     },
     {
