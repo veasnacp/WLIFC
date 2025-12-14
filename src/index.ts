@@ -6,6 +6,7 @@ import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
 import { runBot } from './bot';
 
+const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const port: number = parseInt(process.env.PORT || '3000', 10);
 const token: string | undefined = process.env.BOT_TOKEN;
 const WEBHOOK_PATH = `/webhook/${token}`;
@@ -20,8 +21,10 @@ if (!token || !webAppUrl) {
 }
 
 // Initialize Telegram Bot
-const bot = new TelegramBot(token, { webHook: true });
-
+const bot = new TelegramBot(
+  token,
+  isDev ? { polling: true } : { webHook: true }
+);
 async function init() {
   const info = await bot.getWebHookInfo();
   if (info.url !== WEBHOOK_URL) {
@@ -29,7 +32,9 @@ async function init() {
   }
 }
 
-init();
+if (!isDev) {
+  init();
+}
 
 const app = new Elysia()
   .use(
