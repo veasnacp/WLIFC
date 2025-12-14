@@ -33,6 +33,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+/api
 
 **/*.trace
 **/*.zip
@@ -44,3 +45,4 @@ package-lock.json
 
 # custom
 public/*.json
+**/*.exe
