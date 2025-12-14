@@ -44,5 +44,6 @@ package-lock.json
 **/*.bun
 
 # custom
-public/*.json
+script.sh
 **/*.exe
+public/*.json
