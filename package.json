@@ -5,8 +5,7 @@
     "test": "node src/test/index.ts",
     "b:bot": "npx tsc src/bot/bot-script.ts --outDir public --outFile public/bot.js --module amd",
     "dev": "bun run --watch src/index.ts",
-    "build": "tsc --build",
-    "start": "bun run --watch src/index.ts"
+    "build": "tsc --build && bun run dev"
   },
   "type": "module",
   "dependencies": {
