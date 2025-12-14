@@ -5,7 +5,7 @@ const VERCEL_URL = process.env.VERCEL_URL
 // We use the path defined in our Elysia app: /webhook/:TOKEN
 
 const host = VERCEL_URL.replace(/^(\w+):\/\//i,'')
-const u_name = host.split('-',1)[0] + '-bar'
+const u_name = host.split('-',1)[0] + '-bay'
 const net = host.split('.').slice(1).join('.')
 const PUBLIC_URL = `https://${u_name}.${net}`
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook/${BOT_TOKEN}`;
