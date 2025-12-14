@@ -19,7 +19,7 @@ if (!token || !webAppUrl) {
 }
 
 // Initialize Telegram Bot
-const bot = new TelegramBot(token);
+const bot = new TelegramBot(token, { polling: true });
 
 const app = new Elysia()
   .use(
