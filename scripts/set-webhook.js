@@ -8,7 +8,7 @@ const host = VERCEL_URL.replace(/^(\w+):\/\//i,'')
 const u_name = host.split('-',1)[0] + '-bay'
 const net = host.split('.').slice(1).join('.')
 const PUBLIC_URL = `https://${u_name}.${net}`
-const WEBHOOK_URL = `${PUBLIC_URL}/webhook/${BOT_TOKEN}`;
+const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
 if (!BOT_TOKEN || !VERCEL_URL) {
     console.warn("Skipping Webhook setup: BOT_TOKEN or VERCEL_URL not found.");

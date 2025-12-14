@@ -47,3 +47,4 @@ package-lock.json
 script.sh
 **/*.exe
 public/*.json
+**/__*.ts
