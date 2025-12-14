@@ -129,7 +129,8 @@ const app = new Elysia()
   .get('/wl-admin', async () => {})
   .listen(port, ({ hostname, port }) => {
     console.log(`🦊 Elysia server listening at http://${hostname}:${port}`);
-    runBot(bot, { webAppUrl });
   });
+
+runBot(bot, { webAppUrl });
 
 export default app;
