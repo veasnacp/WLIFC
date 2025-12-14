@@ -43,17 +43,23 @@ const app = new Elysia()
     })
   )
   .use(html())
-  .post(WEBHOOK_PATH, async ({ body, set }) => {
-    set.status = 200;
-    await (async () => {
-      try {
-        bot.processUpdate(body as TelegramBot.Update);
-      } catch (error) {
-        console.error('Error in background processing:', error);
-      }
-    })();
-    return { ok: true };
-  })
+  .post(
+    WEBHOOK_PATH,
+    async ({ body, set }) => {
+      set.status = 200;
+      (async () => {
+        try {
+          bot.processUpdate(body as TelegramBot.Update);
+        } catch (error) {
+          console.error('Error in background processing:', error);
+        }
+      })();
+      return { ok: true };
+    },
+    {
+      body: t.Any(),
+    }
+  )
   .get('/', ({ html }) => {
     return html('<b>Welcome to WL Checker!!!</b>');
   })
