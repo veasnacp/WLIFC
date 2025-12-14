@@ -63,6 +63,7 @@ config.set(
   'WL_MEMBERS_LIST',
   WL_MEMBERS_LIST ? WL_MEMBERS_LIST.split(',') : []
 );
+const loggingCache = new Set<string>();
 
 let invalidMessage = { chadId: undefined, messageId: undefined } as Record<
   'chadId' | 'messageId',
@@ -385,6 +386,15 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       }
     }
   });
+  bot.onText(/\/getLogging/, async (msg) => {
+    const chatId = msg.chat.id;
+    const loggingData = Array.from(loggingCache.values());
+    if (loggingData.length) {
+      try {
+        bot.sendMessage(chatId, loggingData.join('\n'), sendMessageOptions());
+      } catch {}
+    }
+  });
   bot.onText(/\/addMember (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const username_or_first_name = match?.[1]?.trim().substring(0, 20);
@@ -528,14 +538,20 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || '';
-    console.log(
+    const logging = [
       'message',
       msg.text,
       'by user:',
       msg.chat.first_name + (msg.chat.username ? `(${msg.chat.username})` : ''),
       'at',
-      currentDate.date.toISOString()
-    );
+      currentDate.date.toISOString(),
+    ].join(' ');
+    if (currentDate.day() === new Date().getDate()) {
+      loggingCache.add(logging);
+    } else {
+      loggingCache.clear();
+    }
+    console.log(logging);
     const asAdminMember = isMemberAsAdmin(msg);
     const { chadId, messageId } = { ...invalidMessage };
     if (chadId && messageId) {
