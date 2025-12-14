@@ -108,7 +108,10 @@ const app = new Elysia()
     };
   })
   .listen(port, ({ hostname, port }) => {
-    console.log(`🦊 Elysia server listening at http://${hostname}:${port}`);
+    console.log(
+      `🦊 Elysia server listening at http://${hostname}:${port}`,
+      process.env.NODE_ENV
+    );
   })
   .compile();
 
