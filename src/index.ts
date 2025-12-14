@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
 import { html, Html } from '@elysiajs/html';
 import { WLLogistic } from './wl/edit';
@@ -8,6 +8,7 @@ import { runBot } from './bot';
 
 const port: number = parseInt(process.env.PORT || '3000', 10);
 const token: string | undefined = process.env.BOT_TOKEN;
+const WEBHOOK_PATH = `/webhook/${token}`;
 const webAppUrl: string | undefined = process.env.WEB_APP_URL;
 const WL_PUBLIC_URL: string | undefined = process.env.WL_PUBLIC_URL;
 
@@ -18,7 +19,8 @@ if (!token || !webAppUrl) {
 }
 
 // Initialize Telegram Bot
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token);
+runBot(bot, { webAppUrl });
 
 const app = new Elysia()
   .use(
@@ -27,6 +29,24 @@ const app = new Elysia()
     })
   )
   .use(html())
+  .get('/', ({ html }) => {
+    return html('<b>Welcome to WL Checker!!!</b>');
+  })
+  .post(
+    WEBHOOK_PATH,
+    ({ body, set }) => {
+      try {
+        bot.processUpdate(body as TelegramBot.Update);
+      } catch (error) {
+        console.error('Error processing update:', error);
+      }
+      set.status = 200;
+      return { ok: true };
+    },
+    {
+      body: t.Any(),
+    }
+  )
   .get('/wl/*', async ({ params }) => {
     const logCode = params['*'];
     const isNumeric = isNumber(logCode);
@@ -129,8 +149,7 @@ const app = new Elysia()
   .get('/wl-admin', async () => {})
   .listen(port, ({ hostname, port }) => {
     console.log(`🦊 Elysia server listening at http://${hostname}:${port}`);
-  });
-
-runBot(bot, { webAppUrl });
+  })
+  .compile();
 
 export default app;
