@@ -23,6 +23,5 @@
     "@types/request": "^2.48.13",
     "@types/telegram-web-app": "^9.1.1",
     "bun-types": "latest"
-  },
-  "module": "src/index.js"
+  }
 }

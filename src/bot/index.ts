@@ -126,7 +126,6 @@ export async function onTextNumberAction(
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
-    console.log('cookie', cookie);
     const wl = new WLLogistic(logCode, cookie);
     wl.onError = function (error) {
       bot
@@ -535,7 +534,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       'message',
       msg.text,
       'by user:',
-      msg.chat.first_name + (msg.chat.username ? `(${msg.chat.username})` : '')
+      msg.chat.first_name + (msg.chat.username ? `(${msg.chat.username})` : ''),
+      'at',
+      currentDate.date.toISOString()
     );
     const asAdminMember = isMemberAsAdmin(msg);
     const { chadId, messageId } = { ...invalidMessage };
