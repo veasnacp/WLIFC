@@ -3,7 +3,7 @@
   "bunVersion": "1.x",
 
   "functions": {
-    "dist/index.js": {
+    "api/index.js": {
       "runtime": "bun@1.3.4"
     }
   },
@@ -11,7 +11,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "dist/index.js"
+      "destination": "api/index.js"
     }
   ]
 }
