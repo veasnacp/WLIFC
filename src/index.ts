@@ -45,9 +45,9 @@ const app = new Elysia()
   .use(html())
   .post(
     WEBHOOK_PATH,
-    ({ body, set }) => {
+    async ({ body, set }) => {
+      set.status = 200;
       (async () => {
-        set.status = 200;
         try {
           bot.processUpdate(body as TelegramBot.Update);
         } catch (error) {
