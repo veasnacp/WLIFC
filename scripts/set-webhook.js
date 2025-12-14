@@ -1,11 +1,16 @@
 const BOT_TOKEN = process.env.BOT_TOKEN;
-
+const VERCEL_URL = process.env.VERCEL_URL
 // Vercel provides the current deployment URL in the VERCEL_URL environment variable.
 // It typically does NOT include the protocol (https://), so we add it.
 // We use the path defined in our Elysia app: /webhook/:TOKEN
-const WEBHOOK_URL = `${process.env.VERCEL_URL.split('-',1)[0]+'-bay'}/webhook/${BOT_TOKEN}`;
 
-if (!BOT_TOKEN || !process.env.VERCEL_URL) {
+let {protocol, host} = new URL(VERCEL_URL)
+const u_name = host.split('-',1)[0] + '-bar'
+const net = host.split('.').slice(1).join('.')
+const PUBLIC_URL = `https://${u_name}.${net}`
+const WEBHOOK_URL = `${PUBLIC_URL}/webhook/${BOT_TOKEN}`;
+
+if (!BOT_TOKEN || !VERCEL_URL) {
     console.warn("Skipping Webhook setup: BOT_TOKEN or VERCEL_URL not found.");
     process.exit(0);
 }
