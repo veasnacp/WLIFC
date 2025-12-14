@@ -5,6 +5,7 @@ import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
 import path from 'path';
 
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
 
 export function isAdmin(msg: TelegramBot.Message) {
@@ -85,6 +86,43 @@ export function sendMessageOptions(
   } as TelegramBot.SendMessageOptions;
 }
 
+/**
+ * Sends a message directly to the Telegram API without using the bot library.
+ * This ensures the message is sent and acknowledged instantly.
+ * @returns {Promise<number | undefined>} The message ID of the sent message, or undefined if failed.
+ */
+export async function sendDirectMessage(
+  chatId: number,
+  text: string
+): Promise<number | undefined> {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.ok) {
+      // Return the message ID for editing later
+      return data.result.message_id;
+    } else {
+      console.error('Direct send failed:', data.description);
+      return undefined;
+    }
+  } catch (error) {
+    console.error('Network error during direct send:', error);
+    return undefined;
+  }
+}
+
 export async function onTextNumberAction(
   bot: TelegramBot,
   msg: TelegramBot.Message,
@@ -115,14 +153,6 @@ export async function onTextNumberAction(
   let loadingMsgId; // Variable to store the Message ID of the loading text
 
   try {
-    // Send the loading text and store the message object
-    const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
-      parse_mode: 'Markdown',
-    });
-
-    // Extract the message ID so we can delete it later
-    loadingMsgId = loadingMessage.message_id;
-
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
@@ -140,22 +170,63 @@ export async function onTextNumberAction(
     if (_data && typeof _data === 'object' && Object.values(_data).length) {
       data = _data;
     } else {
-      const wl_data = await wl.getDataFromLogCode();
-      if (wl_data && 'message' in wl_data && wl_data.message === 'not found') {
-        await bot.deleteMessage(chatId, loadingMsgId);
-        bot.sendMessage(
-          chatId,
-          `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
-          sendMessageOptions({
-            parse_mode: 'HTML',
-          })
-        );
+      data = (await wl.getDataFromLogCode()) as Data;
+      // if (wl_data && 'message' in wl_data && wl_data.message === 'not found') {
+      //   // await bot.deleteMessage(chatId, loadingMsgId);
+      //   bot.sendMessage(
+      //     chatId,
+      //     `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
+      //     sendMessageOptions({
+      //       parse_mode: 'HTML',
+      //     })
+      //   );
+      //   return;
+      // } else {
+      //   // @ts-ignore
+      //   data = wl_data;
+      // }
+    }
+
+    // Send the loading text and store the message object
+    if (isDev) {
+      const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
+        parse_mode: 'Markdown',
+      });
+      // Extract the message ID so we can delete it later
+      loadingMsgId = loadingMessage.message_id;
+    } else {
+      loadingMsgId = await sendDirectMessage(
+        chatId,
+        '⏳ Processing your request... Please hold tight!'
+      );
+
+      if (!loadingMsgId) {
+        // If the initial send failed, we cannot proceed with editing.
+        console.error('Could not send initial message. Aborting request.');
         return;
-      } else {
-        // @ts-ignore
-        data = wl_data;
+      }
+      if (!data) {
+        await bot.editMessageText('❌ Data not found.', {
+          chat_id: chatId,
+          message_id: loadingMsgId,
+          parse_mode: 'Markdown',
+        });
+        return;
       }
     }
+
+    if (data && 'message' in data && data.message === 'not found') {
+      await bot.deleteMessage(chatId, loadingMsgId);
+      bot.sendMessage(
+        chatId,
+        `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
+        sendMessageOptions({
+          parse_mode: 'HTML',
+        })
+      );
+      return;
+    }
+
     let photos = [] as string[];
     if (data && typeof data.warehousing_pic === 'string') {
       photos = wl.getPhotoFromData(data);
@@ -205,6 +276,15 @@ export async function onTextNumberAction(
           `- ផ្សេងៗ: ${data.desc}\n`
         )
         .substring(0, MAX_CAPTION_LENGTH);
+
+      if (!isDev) {
+        await bot.editMessageText(caption, {
+          chat_id: chatId,
+          message_id: loadingMsgId,
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
     }
 
     const showMoreCaption = async () => {

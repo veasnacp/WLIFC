@@ -30,7 +30,7 @@ async function setTelegramWebhook() {
                 url: WEBHOOK_URL,
                 // Optional: set a maximum number of concurrent updates
                 max_connections: 40,
-                drop_pending_updates: true
+                // drop_pending_updates: true
             }),
         });
 
