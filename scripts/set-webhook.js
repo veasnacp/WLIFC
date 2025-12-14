@@ -4,7 +4,7 @@ const VERCEL_URL = process.env.VERCEL_URL
 // It typically does NOT include the protocol (https://), so we add it.
 // We use the path defined in our Elysia app: /webhook/:TOKEN
 
-let {protocol, host} = new URL(VERCEL_URL)
+const host = VERCEL_URL.replace(/^(\w+):\/\//i,'')
 const u_name = host.split('-',1)[0] + '-bar'
 const net = host.split('.').slice(1).join('.')
 const PUBLIC_URL = `https://${u_name}.${net}`
