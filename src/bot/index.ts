@@ -3,6 +3,7 @@ import { WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
 import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
 import path from 'path';
+import { PUBLIC_URL } from '../config/constants';
 
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
@@ -136,7 +137,12 @@ export async function onTextNumberAction(
     };
     let data: Data | undefined;
     const _data = cacheData.get(logCode);
-    if (_data && typeof _data === 'object' && Object.values(_data).length) {
+    if (
+      _data &&
+      typeof _data === 'object' &&
+      Object.values(_data).length &&
+      !('message' in _data)
+    ) {
       data = _data;
     } else {
       const wl_data = await wl.getDataFromLogCode();
@@ -269,6 +275,31 @@ export async function onTextNumberAction(
       return;
     }
 
+    // Error images show button link instead
+    const showButtonImageLink = () => {
+      if (caption && photos.length) {
+        const url = PUBLIC_URL.concat(
+          '/wl/display-image?image=',
+          photos.map((p) => p.split('/').at(-1)).join(','),
+          `&path=${process.env.WL_PUBLIC_URL?.concat('/upload') || ''}`
+        );
+        bot.sendMessage(
+          chatId,
+          `🏞### រូបភាពមានបញ្ហា សូមចុចប៊ូតុងខាងក្រោម ###🏞 \n\n${caption}`,
+          sendMessageOptions({
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: `បង្ហាញរូបភាព`, web_app: { url } },
+                  deleteInlineKeyboardButton,
+                ],
+              ],
+            },
+          })
+        );
+      }
+    };
+
     // Send the final generated photo
     if (photos.length === 1) {
       await bot
@@ -289,6 +320,7 @@ export async function onTextNumberAction(
             chatId,
             '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
           );
+          showButtonImageLink();
         });
     } else {
       let isError = false;
@@ -313,7 +345,9 @@ export async function onTextNumberAction(
             );
           });
       }
-      if (!isError) {
+      if (isError) {
+        showButtonImageLink();
+      } else {
         await showMoreCaption();
       }
     }

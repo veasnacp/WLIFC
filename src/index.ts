@@ -1,23 +1,23 @@
 import { Elysia, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
-import { html, Html } from '@elysiajs/html';
+import { html } from '@elysiajs/html';
 import { WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
 import { runBot } from './bot';
+import {
+  IS_DEV,
+  PORT,
+  PUBLIC_URL,
+  TOKEN,
+  WEB_APP_URL,
+} from './config/constants';
 
 const NODE_ENV = process.env.NODE_ENV;
-const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
-const port = parseInt(process.env.PORT || '3000', 10);
-const token = process.env.BOT_TOKEN;
-const VERCEL_URL = process.env.VERCEL_URL;
-const WEBHOOK_PATH = `/webhook/${token}`;
-const WEBHOOK_URL = VERCEL_URL
-  ? `${VERCEL_URL}/webhook`
-  : `http://localhost:${port}/webhook`;
-const webAppUrl: string | undefined = process.env.WEB_APP_URL;
+const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
+const webAppUrl = WEB_APP_URL;
 
-if (!token || !webAppUrl) {
+if (!TOKEN || !webAppUrl) {
   throw new Error(
     'BOT_TOKEN and WEB_APP_URL must be defined in the .env file.'
   );
@@ -25,8 +25,8 @@ if (!token || !webAppUrl) {
 
 // Initialize Telegram Bot
 const bot = new TelegramBot(
-  token,
-  isDev ? { polling: true } : { webHook: true }
+  TOKEN,
+  IS_DEV ? { polling: true } : { webHook: true }
 );
 runBot(bot, { webAppUrl });
 
@@ -158,6 +158,36 @@ const app = new Elysia()
           } as typeof data),
     };
   })
+  .get('/wl/display-image', ({ query, html }) => {
+    let { image = '', path = '' } = query;
+    if (path.trim().startsWith('http')) {
+      path = path.split('://')[1]?.trim() || '';
+    }
+    path = path.trim() ? `https://${path.trim()}/` : '';
+    const noImage = /*html*/ `<span style="color:blue;font-size:18px;font-weight:bold;">No Image</span>`;
+    let img = noImage;
+    if (image.trim()) {
+      const images = image
+        .trim()
+        .split(',')
+        .filter((v) => Boolean(v.trim()));
+      if (images.length) {
+        img = ''.concat(
+          images
+            .map((p) => {
+              return /*html*/ `<img src="${path.concat(
+                p.trim()
+              )}" width="500" height="500" style="width:100%;height:auto;">`;
+            })
+            .join('\n')
+        );
+      }
+    }
+
+    return html(
+      /*html*/ `<div style="display:flex;gap:4px;padding:16px;flex-wrap:wrap;align-items:center;justify-content:center;">${img}</div>`
+    );
+  })
   // Handle 404
   .onError(({ code, error }) => {
     if (code === 'NOT_FOUND') {
@@ -176,11 +206,11 @@ const app = new Elysia()
   .compile();
 
 // Start server in development
-if (NODE_ENV === 'development') {
-  const server = app.listen(port, () => {
-    console.log(`🚀 Server running on http://localhost:${port}`);
+if (IS_DEV) {
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
-    console.log(`📝 Set webhook: http://localhost:${port}/api/set-webhook`);
+    console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
 
