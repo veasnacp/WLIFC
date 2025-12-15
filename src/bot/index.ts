@@ -1,8 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api';
+import path from 'path';
 import { WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
-import path from 'path';
+import { chunkArray, removeDuplicateObjArray } from '../utils/is';
 import { PUBLIC_URL } from '../config/constants';
 
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
@@ -57,13 +57,25 @@ if (isDev) {
 type ConfigCache = {
   cookie: string;
   WL_MEMBERS_LIST: string[];
+  bannedUsers: string[];
 };
+type PreMapConfig = Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>;
+type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
+  get: <K extends keyof ConfigCache>(key: K) => ConfigCache[K] | undefined;
+  set: <K extends keyof ConfigCache>(
+    key: K,
+    value: ConfigCache[K]
+  ) => MapConfig;
+};
+
 const cacheData = new Map<string, Data>(DATA);
-const config = new Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>();
+const config = new Map() as MapConfig;
 config.set(
   'WL_MEMBERS_LIST',
   WL_MEMBERS_LIST ? WL_MEMBERS_LIST.split(',') : []
 );
+config.set('bannedUsers', []);
+
 const loggingCache = new Set<string>();
 
 let invalidMessage = { chadId: undefined, messageId: undefined } as Record<
@@ -86,6 +98,32 @@ export function sendMessageOptions(
     },
   } as TelegramBot.SendMessageOptions;
 }
+
+export const adminInlineKeyboardButtons = [
+  {
+    text: 'Show LogCodes',
+    callback_data: 'getLogCodes',
+  },
+  {
+    text: 'Show Logging',
+    callback_data: 'getLogging',
+  },
+  {
+    text: 'Show Config Users',
+    callback_data: 'getConfigUsers',
+  },
+  {
+    text: 'Reset Data',
+    callback_data: 'resetData',
+  },
+  {
+    text: 'Clear All',
+    callback_data: 'clear',
+  },
+] as const;
+
+type AdminInlineKeyboardAction =
+  (typeof adminInlineKeyboardButtons)[number]['callback_data'];
 
 export async function onTextNumberAction(
   bot: TelegramBot,
@@ -110,6 +148,19 @@ export async function onTextNumberAction(
           ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
           : '',
         '❌ Sorry, invalid code. Please try again.'
+      )
+    );
+    return;
+  } else if (
+    config
+      .get('bannedUsers')
+      ?.some((u) => u === (msg.chat.username || msg.chat.first_name))
+  ) {
+    bot.sendMessage(
+      chatId,
+      ''.concat(
+        'គណនីរបស់អ្នកបានជាប់ក្នុងបញ្ជីរស្បែកខ្មៅ សូមទាក់ទងទៅអ្នកគ្រប់គ្រងរបស់អ្នក។\n',
+        '❌ Sorry, Your account has been banned. Please contact to admin.'
       )
     );
     return;
@@ -417,6 +468,85 @@ export async function onTextNumberAction(
   }
 }
 
+export const configUserWithAdminPermission = async (
+  bot: TelegramBot,
+  msg: TelegramBot.Message,
+  options: {
+    key: keyof ConfigCache;
+    type: 'add' | 'remove';
+  }
+) => {
+  const chatId = msg.chat.id;
+  const username_or_first_name = msg.text?.trim().substring(0, 20);
+  if (isAdmin(msg)) {
+    const members = (config.get(options.key) as string[]) || [];
+    if (username_or_first_name) {
+      const hasMember = members.includes(username_or_first_name);
+      let botMessage = '';
+      if (options.type === 'add') {
+        if (!hasMember)
+          config.set(options.key, [...members, username_or_first_name]);
+
+        let addedMessage = '';
+        switch (options.key) {
+          case 'WL_MEMBERS_LIST':
+            addedMessage = 'បានចូលជាសមាជិកពេញសិទ្ធិ។';
+            break;
+          case 'bannedUsers':
+            addedMessage = 'added to ban list.';
+            break;
+
+          default:
+            break;
+        }
+        botMessage = !hasMember
+          ? `✅ ${username_or_first_name} ${addedMessage}`
+          : `${username_or_first_name} already added!`;
+      } else if (options.type === 'remove') {
+        if (hasMember)
+          config.set(
+            options.key,
+            members.filter((m) => m !== username_or_first_name)
+          );
+        let removedMessage = '';
+        switch (options.key) {
+          case 'WL_MEMBERS_LIST':
+            removedMessage = 'បានដកចេញពីសមាជិកពេញសិទ្ធិ។';
+            break;
+          case 'bannedUsers':
+            removedMessage = 'removed from ban list.';
+            break;
+
+          default:
+            break;
+        }
+        botMessage = hasMember
+          ? `✅ ${username_or_first_name} ${removedMessage}`
+          : `Currently, ${username_or_first_name} is not in ${options.key.toUpperCase()}.`;
+      }
+      await bot.sendMessage(chatId, botMessage);
+    }
+  } else {
+    await bot.sendMessage(
+      chatId,
+      `❌ ${msg.chat.first_name} អ្នកមិនមានសិទ្ធិក្នុងការបន្ថែមសមាជិកនោះទេ!`
+    );
+  }
+};
+
+export const onTextConfigUserWithAdminPermission = (
+  bot: TelegramBot,
+  regexp: RegExp,
+  options: {
+    key: keyof ConfigCache;
+    type: 'add' | 'remove';
+  }
+) => {
+  bot.onText(regexp, async (msg) => {
+    await configUserWithAdminPermission(bot, msg, options);
+  });
+};
+
 const integerRegExp = /^\d+$/;
 
 export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
@@ -428,6 +558,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       `សួស្តី! ${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`
     );
   });
+
   bot.onText(/\/setCookie (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const cookie = match?.[1]?.trim();
@@ -436,87 +567,38 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       bot.sendMessage(chatId, 'Successfully set new cookie');
     }
   });
-  bot.onText(/\/getLogCodes/, async (msg) => {
-    const chatId = msg.chat.id;
-    if (isDev) {
-      const fs = process.getBuiltinModule('fs');
-      if (fs && fs.existsSync(fileData)) {
-        const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
-        if (dataString.startsWith('[') && dataString.endsWith(']')) {
-          try {
-            DATA = JSON.parse(dataString);
-            if (DATA) {
-              bot.sendMessage(
-                chatId,
-                Array.from(new Map(DATA).values())
-                  .map((d) => '/' + Number(d.logcode))
-                  .join('\n')
-              );
-            }
-          } catch {}
-        }
-      }
-    }
+
+  onTextConfigUserWithAdminPermission(bot, /\/addMember (.+)/, {
+    key: 'WL_MEMBERS_LIST',
+    type: 'add',
   });
-  bot.onText(/\/getLogging/, async (msg) => {
-    const chatId = msg.chat.id;
-    const loggingData = Array.from(loggingCache.values());
-    if (loggingData.length) {
-      try {
-        bot.sendMessage(chatId, loggingData.join('\n'), sendMessageOptions());
-      } catch {}
-    }
+  onTextConfigUserWithAdminPermission(bot, /\/removeMember (.+)/, {
+    key: 'WL_MEMBERS_LIST',
+    type: 'remove',
   });
-  bot.onText(/\/addMember (.+)/, async (msg, match) => {
+  onTextConfigUserWithAdminPermission(bot, /\/addBanUser (.+)/, {
+    key: 'bannedUsers',
+    type: 'add',
+  });
+  onTextConfigUserWithAdminPermission(bot, /\/removeBanUser (.+)/, {
+    key: 'bannedUsers',
+    type: 'remove',
+  });
+
+  const getConfigUsers = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
-    const username_or_first_name = match?.[1]?.trim().substring(0, 20);
     if (isAdmin(msg)) {
-      const members = (config.get('WL_MEMBERS_LIST') as string[]) || [];
-      if (username_or_first_name) {
-        const hasMember = members.includes(username_or_first_name);
-        if (!hasMember)
-          config.set('WL_MEMBERS_LIST', [...members, username_or_first_name]);
-        await bot.sendMessage(
-          chatId,
-          !hasMember
-            ? `✅ ${username_or_first_name} បានចូលជាសមាជិកពេញសិទ្ធិ។`
-            : `${username_or_first_name} already added!`
-        );
-      }
-    } else {
-      await bot.sendMessage(
-        chatId,
-        `❌ ${msg.chat.first_name} អ្នកមិនមានសិទ្ធិក្នុងការបន្ថែមសមាជិកនោះទេ!`
-      );
+      const data = Array.from(config.entries())
+        .filter(([_, v]) => Array.isArray(v))
+        .map(
+          ([k, v]) =>
+            `=== ✅ ${k.toUpperCase()} ✅ ===\n${(v as string[]).join(', ')}`
+        )
+        .join('\n\n');
+      await bot.sendMessage(chatId, data.slice(0, MAX_CAPTION_LENGTH)).catch();
     }
-  });
-  bot.onText(/\/removeMember (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const username_or_first_name = match?.[1]?.trim().substring(0, 20);
-    if (isAdmin(msg)) {
-      const members = (config.get('WL_MEMBERS_LIST') as string[]) || [];
-      if (username_or_first_name) {
-        const hasMember = members.includes(username_or_first_name);
-        if (hasMember)
-          config.set(
-            'WL_MEMBERS_LIST',
-            members.filter((m) => m === username_or_first_name)
-          );
-        await bot.sendMessage(
-          chatId,
-          hasMember
-            ? `✅ ${username_or_first_name} បានដកចេញពីសមាជិកពេញសិទ្ធិ។`
-            : `Currently, ${username_or_first_name} is not in full options member.`
-        );
-      }
-    } else {
-      await bot.sendMessage(
-        chatId,
-        `❌ ${msg.chat.first_name} អ្នកមិនមានសិទ្ធិក្នុងការដកសមាជិកនោះទេ!`
-      );
-    }
-  });
-  bot.onText(/\/resetData/, async (msg) => {
+  };
+  const resetData = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     cacheData.clear();
     if (isDev) {
@@ -526,29 +608,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         await bot.sendMessage(chatId, '✅ Successfully data reset');
       }
     }
-  });
-  bot.onText(/^(?!\/)(?!\d+$).+/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const text = msg.text?.trim();
-    if (!match || !text) {
-      return;
-    }
-    try {
-      const message = await bot.sendMessage(
-        chatId,
-        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊`
-      );
-      invalidMessage.chadId = chatId;
-      invalidMessage.messageId = message.message_id;
-    } catch (error) {
-      console.error(
-        'Error sending simple text message:',
-        (error as Error).message
-      );
-    }
-  });
-
-  bot.onText(/\/clear/, async (msg) => {
+  };
+  const clearAll = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     try {
       let isError = false;
@@ -578,22 +639,120 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     } catch (error) {
       console.error('Error sending clear message:', (error as Error).message);
     }
+  };
+  const getLogCodes = async (msg: TelegramBot.Message) => {
+    const chatId = msg.chat.id;
+    if (isDev) {
+      const fs = process.getBuiltinModule('fs');
+      if (fs && fs.existsSync(fileData)) {
+        const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
+        if (dataString.startsWith('[') && dataString.endsWith(']')) {
+          try {
+            DATA = JSON.parse(dataString);
+            if (DATA) {
+              bot.sendMessage(
+                chatId,
+                Array.from(new Map(DATA).values())
+                  .map((d) => '/' + Number(d.logcode))
+                  .join('\n')
+              );
+            }
+          } catch {}
+        }
+      }
+    }
+  };
+  const getLogging = async (msg: TelegramBot.Message) => {
+    const chatId = msg.chat.id;
+    const loggingData = Array.from(loggingCache.values());
+    if (loggingData.length) {
+      try {
+        bot.sendMessage(chatId, loggingData.join('\n'), sendMessageOptions());
+      } catch {}
+    }
+  };
+
+  bot.onText(/\/showButtons/, (msg) => {
+    const chatId = msg.chat.id;
+
+    if (isAdmin(msg))
+      bot
+        .sendMessage(chatId, 'All Buttons for admin', {
+          reply_markup: {
+            inline_keyboard: [
+              [...adminInlineKeyboardButtons.slice(0, 2)],
+              [...adminInlineKeyboardButtons.slice(2, 3)],
+              [...adminInlineKeyboardButtons.slice(3)],
+            ],
+          },
+        })
+        .catch();
   });
+
+  bot.onText(/\/getLogCodes/, getLogCodes);
+  bot.onText(/\/getLogging/, getLogging);
+  bot.onText(/\/getConfigUsers/, getConfigUsers);
+  bot.onText(/\/resetData/, resetData);
+  bot.onText(/\/clear/, clearAll);
 
   bot.on('callback_query', function onCallbackQuery(callbackQuery) {
     const action = callbackQuery.data;
     const msg = callbackQuery.message;
     const chatId = msg?.chat.id;
     try {
-      if (action === 'delete' && chatId) {
-        try {
-          bot.deleteMessage(chatId, msg.message_id);
-        } catch (error) {
-          console.error('Error delete message:', (error as Error).message);
+      if (chatId) {
+        if (action === 'delete') {
+          try {
+            bot.deleteMessage(chatId, msg.message_id);
+          } catch (error) {
+            console.error('Error delete message:', (error as Error).message);
+          }
+        } else {
+          switch (action as AdminInlineKeyboardAction) {
+            case 'getLogCodes':
+              getLogCodes(msg);
+              break;
+            case 'getLogging':
+              getLogging(msg);
+              break;
+            case 'getConfigUsers':
+              getConfigUsers(msg);
+              break;
+            case 'resetData':
+              resetData(msg);
+              break;
+            case 'clear':
+              clearAll(msg);
+              break;
+
+            default:
+              break;
+          }
         }
       }
     } catch (error) {
       console.error('Error delete message:', (error as Error).message);
+    }
+  });
+
+  bot.onText(/^(?!\/)(?!\d+$).+/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const text = msg.text?.trim();
+    if (!match || !text) {
+      return;
+    }
+    try {
+      const message = await bot.sendMessage(
+        chatId,
+        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊`
+      );
+      invalidMessage.chadId = chatId;
+      invalidMessage.messageId = message.message_id;
+    } catch (error) {
+      console.error(
+        'Error sending simple text message:',
+        (error as Error).message
+      );
     }
   });
 
@@ -624,6 +783,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       loggingCache.clear();
     }
     console.log(logging);
+
     const asAdminMember = isMemberAsAdmin(msg);
     const { chadId, messageId } = { ...invalidMessage };
     if (chadId && messageId) {
@@ -640,37 +800,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     if (text.startsWith('/')) {
       const t = text.slice(1);
       const isNumeric = integerRegExp.test(t);
-      if (asAdminMember && isNumeric) {
+      if (isNumeric) {
         await onTextNumberAction(bot, msg, t, { withMore: asAdminMember });
-      }
-    }
-    // Check if the message contains data from a Web App
-    if (msg.web_app_data) {
-      try {
-        const rawData = msg.web_app_data.data;
-        // Type-cast the parsed data to ensure type safety
-        const data: MiniAppData = JSON.parse(rawData);
-
-        const action = data.action;
-        const timestamp = data.timestamp;
-        const userId = data.user_id;
-
-        // Respond to the user with the data received
-        let responseText = `🎉 **Data Received from App!** 🎉\n\n`;
-        responseText += `**Action:** ${action}\n`;
-        responseText += `**Timestamp:** ${timestamp}\n`;
-        responseText += `**User ID:** ${userId}`;
-
-        await bot.sendMessage(chatId, responseText, { parse_mode: 'Markdown' });
-      } catch (error) {
-        console.error(
-          'Error processing Web App data:',
-          (error as Error).message
-        );
-        await bot.sendMessage(
-          chatId,
-          'Received data from Mini App, but an error occurred while processing.'
-        );
       }
     }
   });
