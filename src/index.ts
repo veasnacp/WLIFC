@@ -188,6 +188,28 @@ const app = new Elysia()
       /*html*/ `<div style="display:flex;gap:4px;padding:16px;flex-wrap:wrap;align-items:center;justify-content:center;">${img}</div>`
     );
   })
+  // Fetch the external image
+  .get('/blob/image', async ({ query, set }) => {
+    const { url } = query;
+    try {
+      if (!url?.trim()) {
+        throw new Error('Image URL is require.');
+      }
+      const response = await fetch(url);
+      if (!response.ok) {
+        set.status = 502;
+        return 'Failed to fetch image from external source.';
+      }
+      const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+      set.headers['Content-Type'] = contentType;
+
+      return response.arrayBuffer();
+    } catch (error) {
+      console.error('Error serving external image:', (error as Error).message);
+      set.status = 500;
+      return 'Internal Server Error';
+    }
+  })
   // Handle 404
   .onError(({ code, error }) => {
     if (code === 'NOT_FOUND') {

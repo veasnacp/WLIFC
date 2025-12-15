@@ -276,7 +276,7 @@ export async function onTextNumberAction(
     }
 
     // Error images show button link instead
-    const showButtonImageLink = () => {
+    const showButtonImageLink = (errorMessageId?: number) => {
       if (caption && photos.length) {
         const url = PUBLIC_URL.concat(
           '/wl/display-image?image=',
@@ -297,9 +297,13 @@ export async function onTextNumberAction(
             },
           })
         );
+        if (errorMessageId) {
+          bot.deleteMessage(chatId, errorMessageId).catch();
+        }
       }
     };
 
+    let errorMessageId: number | undefined;
     // Send the final generated photo
     if (photos.length === 1) {
       await bot
@@ -314,39 +318,61 @@ export async function onTextNumberAction(
           console.log(`Successfully sent an photo.`);
           await showMoreCaption();
         })
-        .catch((error) => {
+        .catch(async (error) => {
           console.error('Error sending photo:', (error as Error).message);
-          bot.sendMessage(
+          const { message_id } = await bot.sendMessage(
             chatId,
             '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
           );
-          showButtonImageLink();
+          errorMessageId = message_id;
+          showButtonImageLink(errorMessageId);
         });
     } else {
       let isError = false;
       const medias = chunkArray(media, 10);
-      for (let i = 0; i < medias.length; i++) {
-        await bot
-          .sendMediaGroup(chatId, medias[i])
-          .then((sentMessages) => {
-            console.log(
-              `Successfully sent an album with ${sentMessages.length} items.`
-            );
-          })
-          .catch((error) => {
-            isError = true;
-            console.error(
-              'Error sending media group:',
-              (error as Error).message
-            );
-            bot.sendMessage(
-              chatId,
-              '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
-            );
-          });
-      }
+      const sendMediaGroup = async (medias: TelegramBot.InputMedia[][]) => {
+        for (let i = 0; i < medias.length; i++) {
+          await bot
+            .sendMediaGroup(chatId, medias[i])
+            .then((sentMessages) => {
+              console.log(
+                `Successfully sent an album with ${sentMessages.length} items.`
+              );
+            })
+            .catch(async (error) => {
+              isError = true;
+              console.error(
+                'Error sending media group:',
+                (error as Error).message
+              );
+              const { message_id } = await bot.sendMessage(
+                chatId,
+                '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
+              );
+              errorMessageId = message_id;
+            });
+        }
+      };
+      await sendMediaGroup(medias);
       if (isError) {
-        showButtonImageLink();
+        const tryLoadingMessage = await bot.sendMessage(
+          chatId,
+          '⏳ Trying load image...'
+        );
+        const medias = chunkArray(
+          media.map((m) => ({
+            ...m,
+            media: `${PUBLIC_URL}/blob/image?url=${m.media}`,
+          })),
+          10
+        );
+        console.log(medias);
+        await sendMediaGroup(medias);
+        if (errorMessageId) {
+          bot.deleteMessage(chatId, errorMessageId).catch();
+          bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
+        }
+        // showButtonImageLink(errorMessageId);
       } else {
         await showMoreCaption();
       }
