@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
 import { html } from '@elysiajs/html';
+import path from 'path';
 import { WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
@@ -33,7 +34,7 @@ runBot(bot, { webAppUrl });
 const app = new Elysia()
   .use(
     staticPlugin({
-      assets: 'public',
+      assets: path.join(process.cwd(), 'public'),
       prefix: '/',
     })
   )
