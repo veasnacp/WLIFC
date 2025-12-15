@@ -33,6 +33,7 @@ runBot(bot, { webAppUrl });
 const app = new Elysia()
   .use(
     staticPlugin({
+      assets: 'public',
       prefix: '/',
     })
   )
