@@ -305,30 +305,44 @@ export async function onTextNumberAction(
 
     let errorMessageId: number | undefined;
     // Send the final generated photo
+    let isError = false;
     if (photos.length === 1) {
-      await bot
-        .sendPhoto(
-          chatId,
-          photos[0],
-          sendMessageOptions({
-            caption,
-          })
-        )
-        .then(async () => {
-          console.log(`Successfully sent an photo.`);
-          await showMoreCaption();
-        })
-        .catch(async (error) => {
-          console.error('Error sending photo:', (error as Error).message);
-          const { message_id } = await bot.sendMessage(
+      const sendPhoto = async (photo: string | Buffer) => {
+        await bot
+          .sendPhoto(
             chatId,
-            '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
-          );
-          errorMessageId = message_id;
-          showButtonImageLink(errorMessageId);
-        });
+            photo,
+            sendMessageOptions({
+              caption,
+            })
+          )
+          .then(async () => {
+            console.log(`Successfully sent an photo.`);
+            await showMoreCaption();
+          })
+          .catch(async (error) => {
+            isError = true;
+            console.error('Error sending photo:', (error as Error).message);
+            const { message_id } = await bot.sendMessage(
+              chatId,
+              '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
+            );
+            errorMessageId = message_id;
+          });
+      };
+      await sendPhoto(photos[0]);
+      if (isError) {
+        const tryLoadingMessage = await bot.sendMessage(
+          chatId,
+          '⏳ Trying load image...'
+        );
+        await sendPhoto(`${PUBLIC_URL}/blob/image?url=${photos[0]}`);
+        if (errorMessageId) {
+          await bot.deleteMessage(chatId, errorMessageId).catch();
+          bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
+        }
+      }
     } else {
-      let isError = false;
       const medias = chunkArray(media, 10);
       const sendMediaGroup = async (medias: TelegramBot.InputMedia[][]) => {
         for (let i = 0; i < medias.length; i++) {
@@ -366,13 +380,11 @@ export async function onTextNumberAction(
           })),
           10
         );
-        console.log(medias);
         await sendMediaGroup(medias);
         if (errorMessageId) {
-          bot.deleteMessage(chatId, errorMessageId).catch();
+          await bot.deleteMessage(chatId, errorMessageId).catch();
           bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
         }
-        // showButtonImageLink(errorMessageId);
       } else {
         await showMoreCaption();
       }
