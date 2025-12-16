@@ -34,7 +34,11 @@ export class WLLogistic {
    * Get id from pid
    * @returns number or string
    */
-  async getDataFromLogCode(logCode?: string | number) {
+  async getDataFromLogCode(
+    logCode?: string | number,
+    showAllSmallPackage = false,
+    isSubLogCode = false
+  ) {
     if (logCode) {
       this._currentLogCode = logCode;
     }
@@ -46,10 +50,17 @@ export class WLLogistic {
       });
       const dataList = (await res.json()).data as Array<Data>;
       const data_0 =
-        (dataList.find(
-          (d) => d.logcode === String(this._currentLogCode)
-        ) as Data) || {};
+        showAllSmallPackage || isSubLogCode
+          ? dataList[0]
+          : (dataList.find(
+              (d) => d.logcode === String(this._currentLogCode)
+            ) as Data) || {};
+
       const id = data_0.id;
+      const isSmallPackage = data_0.goods_name?.includes('件合');
+      if (!showAllSmallPackage && isSmallPackage) {
+        return { ...data_0, isSmallPackage };
+      }
       if (id) {
         const res = await fetch(this.apiUrlLogCode(id), {
           headers: this.headers,
@@ -57,12 +68,64 @@ export class WLLogistic {
           method: 'GET',
         });
         const dataList = (await res.json()).data as Array<Data>;
+
+        if (showAllSmallPackage) {
+          const subLogCodes: string[] = [data_0.logcode];
+          const smallPackageGoodsNames: string[] = [];
+          let contact = {} as Record<string, string>;
+          const data = dataList.reduce((d, prev, i) => {
+            const detailGoodsName = `${i + 1}. `.concat(
+              prev.goods_name?.trim()
+                ? `${prev.goods_name}${
+                    prev.material?.trim() ? ` (${prev.material})` : ''
+                  } - `
+                : '',
+              prev.sub_logcode,
+              `\n\t\t 🔹 ${prev.volume}m³ | ${prev.weight}kg | $${prev.total}`
+            );
+            smallPackageGoodsNames.push(detailGoodsName);
+            if (prev.sub_logcode) {
+              subLogCodes.push(prev.sub_logcode);
+            }
+            if (!contact.from_address && !contact.to_address) {
+              const {
+                from_address,
+                from_name,
+                from_phone,
+                to_address,
+                to_name,
+                to_phone,
+              } = prev;
+              contact = {
+                from_address,
+                from_name,
+                from_phone,
+                to_address,
+                to_name,
+                to_phone,
+              };
+              d = { ...d, ...contact };
+            }
+            return d;
+          }, data_0);
+          return {
+            ...data,
+            smallPackageGoodsNames,
+            subLogCodes,
+            isSmallPackage,
+          };
+        }
+
         const dataUpdate = {
+          sub_total: [] as number[],
+          total: [] as number[],
           goods_number: [] as number[],
           weight: [] as number[],
+          net_weight: [] as number[],
           volume: [] as number[],
           volume_record: [] as string[],
           warehousing_pic: [] as string[],
+          goods_name: [] as string[],
         };
         const dataUpdateKeys = Object.keys(
           dataUpdate
@@ -74,10 +137,16 @@ export class WLLogistic {
             if (dataUpdateKeys.some((k) => k in d)) {
               hasUpdateData = true;
               dataUpdateKeys.map((k) => {
-                const value =
-                  k === 'volume_record' || k === 'warehousing_pic'
-                    ? d[k]
-                    : Number(d[k]);
+                let value = d[k];
+                if (
+                  !(
+                    ['volume_record', 'warehousing_pic', 'goods_name'] as const
+                  ).some((v) => v === k)
+                ) {
+                  value = Number(value);
+                } else if (k === 'goods_name' && d.material?.trim()) {
+                  value = `${d.goods_name} (${d.material})`;
+                }
                 // @ts-ignore
                 dataUpdate[k].push(value);
               });
@@ -92,9 +161,13 @@ export class WLLogistic {
         });
         if (hasUpdateData) {
           dataUpdateKeys.map((k) => {
-            if (k === 'volume_record' || k === 'warehousing_pic') {
+            if (
+              k === 'volume_record' ||
+              k === 'warehousing_pic' ||
+              k === 'goods_name'
+            ) {
               data[k] = removeDuplicateArray(dataUpdate[k]).join(
-                k === 'warehousing_pic' ? ',' : ''
+                k !== 'volume_record' ? ',' : ''
               );
             } else {
               // @ts-ignore

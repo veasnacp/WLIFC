@@ -129,29 +129,16 @@ export async function onTextNumberAction(
   bot: TelegramBot,
   msg: TelegramBot.Message,
   logCode: string | undefined,
-  options?: {
+  options?: Partial<{
     withMore: boolean;
-  }
+    showAllSmallPackage: boolean;
+    isSubLogCode: boolean;
+  }>
 ) {
   const chatId = msg.chat.id;
   if (!logCode) return;
 
-  const isValidStartsWith = logCode.startsWith('25');
   if (
-    !isValidStartsWith ||
-    (isValidStartsWith && logCode.length !== '251209180405'.length)
-  ) {
-    bot.sendMessage(
-      chatId,
-      'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
-        logCode.startsWith('1757')
-          ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
-          : '',
-        '❌ Sorry, invalid code. Please try again.'
-      )
-    );
-    return;
-  } else if (
     config
       .get('bannedUsers')
       ?.some((u) => u === (msg.chat.username || msg.chat.first_name))
@@ -186,17 +173,40 @@ export async function onTextNumberAction(
           invalidMessage.messageId = message.message_id;
         });
     };
-    let data: Data | undefined;
-    const _data = cacheData.get(logCode);
+    let data:
+      | (Data & {
+          isSmallPackage?: boolean;
+          smallPackageGoodsNames?: string[];
+          subLogCodes?: string[];
+        })
+      | undefined;
+    let _logCode = logCode;
+    if (options?.showAllSmallPackage)
+      cacheData.keys().find((k) => {
+        if (k.includes(logCode)) {
+          _logCode = k;
+        }
+      });
+    const _data = cacheData.get(_logCode) as typeof data;
+    let refetchData = true;
     if (
       _data &&
       typeof _data === 'object' &&
       Object.values(_data).length &&
       !('message' in _data)
     ) {
+      refetchData = false;
       data = _data;
-    } else {
-      const wl_data = await wl.getDataFromLogCode();
+      if (options?.showAllSmallPackage && !_data.smallPackageGoodsNames) {
+        refetchData = true;
+      }
+    }
+    if (refetchData) {
+      const wl_data = await wl.getDataFromLogCode(
+        undefined,
+        options?.showAllSmallPackage,
+        options?.isSubLogCode
+      );
       if (wl_data && 'message' in wl_data && wl_data.message === 'not found') {
         await bot.deleteMessage(chatId, loadingMsgId);
         bot.sendMessage(
@@ -219,8 +229,9 @@ export async function onTextNumberAction(
     let caption: string | undefined;
 
     if (data) {
-      if (!cacheData.get(logCode)) {
-        cacheData.set(logCode, data);
+      const _logCode = data.subLogCodes ? data.subLogCodes.join('-') : logCode;
+      if (!cacheData.get(_logCode)) {
+        cacheData.set(_logCode, data);
         if (isDev) {
           const fs = process.getBuiltinModule('fs');
           if (fs) {
@@ -257,7 +268,9 @@ export async function onTextNumberAction(
                 )
               : 'N/A'
           }\n`,
-          `- ទំនិញ: ${data.goods_name}\n`,
+          `- ទំនិញ: ${data.goods_name}${
+            data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
+          }\n`,
           `- ផ្សេងៗ: ${data.desc}\n`
         )
         .substring(0, MAX_CAPTION_LENGTH);
@@ -272,15 +285,19 @@ export async function onTextNumberAction(
               `<b>Container Number:</b> ${data.container_num}\n`,
               `<b>Member Name:</b> ${data.member_name}\n`,
               `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
-              `<b>Form Name:</b> ${data.from_name}${
-                data.from_phone ? ` (${data.from_phone})` : ''
-              }\n`,
-              `<b>Form Address:</b> ${data.from_address}\n`,
-              `<b>To Name:</b> ${data.to_name}${
-                data.to_phone ? ` (${data.to_phone})` : ''
-              }\n`,
-              `<b>To Address:</b> ${data.to_address}\n`,
-              `<b>Total: $${data.total}</b> (${
+              data.from_address.trim() && data.to_address.trim()
+                ? ''.concat(
+                    `<b>Form Name:</b> ${data.from_name}${
+                      data.from_phone ? ` (${data.from_phone})` : ''
+                    }\n`,
+                    `<b>Form Address:</b> ${data.from_address}\n`,
+                    `<b>To Name:</b> ${data.to_name}${
+                      data.to_phone ? ` (${data.to_phone})` : ''
+                    }\n`,
+                    `<b>To Address:</b> ${data.to_address}\n`
+                  )
+                : '',
+              `<b>Total: $${Number(data.total).toFixed(2)}</b> (${
                 !!data.payment_status ? 'Paid' : 'Unpaid'
               })\n`,
               data.expresstracking
@@ -316,11 +333,21 @@ export async function onTextNumberAction(
     })) as TelegramBot.InputMedia[];
 
     if (caption && photos.length === 0) {
-      bot.sendMessage(
+      await bot.sendMessage(
         chatId,
-        `🏞### អត់មានរូបភាពទេ ###🏞 \n\n${caption}`,
+        `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${caption}`,
         sendMessageOptions()
       );
+      if (data?.smallPackageGoodsNames?.length && data.subLogCodes) {
+        await bot.sendMessage(
+          chatId,
+          '=== អីវ៉ាន់តូចៗទាំងអស់ ===\n'.concat(
+            data.smallPackageGoodsNames.join('\n')
+          ),
+          sendMessageOptions()
+        );
+      }
+      await showMoreCaption();
       // Delete the temporary loading message
       await bot.deleteMessage(chatId, loadingMsgId);
       return;
@@ -474,10 +501,13 @@ export const configUserWithAdminPermission = async (
   options: {
     key: keyof ConfigCache;
     type: 'add' | 'remove';
+    username_or_first_name?: string;
   }
 ) => {
   const chatId = msg.chat.id;
-  const username_or_first_name = msg.text?.trim().substring(0, 20);
+  const username_or_first_name = options.username_or_first_name
+    ?.trim()
+    .substring(0, 20);
   if (isAdmin(msg)) {
     const members = (config.get(options.key) as string[]) || [];
     if (username_or_first_name) {
@@ -542,8 +572,11 @@ export const onTextConfigUserWithAdminPermission = (
     type: 'add' | 'remove';
   }
 ) => {
-  bot.onText(regexp, async (msg) => {
-    await configUserWithAdminPermission(bot, msg, options);
+  bot.onText(regexp, async (msg, match) => {
+    await configUserWithAdminPermission(bot, msg, {
+      ...options,
+      username_or_first_name: match?.[1]?.trim(),
+    });
   });
 };
 
@@ -741,10 +774,41 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     if (!match || !text) {
       return;
     }
+
+    if (
+      text.toLowerCase().startsWith('s:') ||
+      text.toLowerCase().startsWith('sm:')
+    ) {
+      const showAllSmallPackage = text.startsWith('sm:');
+      const logCode = text.slice(showAllSmallPackage ? 3 : 2).trim();
+      const isValidSmallPackageLogCode =
+        logCode.length >= 13 && logCode.length <= 15;
+      if (!isValidSmallPackageLogCode) {
+        bot.sendMessage(
+          msg.chat.id,
+          ''.concat(
+            'នែ៎ៗៗ! លេខកូដមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n',
+            '❌ Sorry, invalid code. Please try again.'
+          )
+        );
+        return;
+      } else {
+        const asAdminMember = isMemberAsAdmin(msg);
+        await onTextNumberAction(bot, msg, logCode, {
+          withMore: asAdminMember,
+          showAllSmallPackage,
+          isSubLogCode: true,
+        });
+        return;
+      }
+    }
     try {
       const message = await bot.sendMessage(
         chatId,
-        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊`
+        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊\n`.concat(
+          'ឥឡូវនេះអ្នកក៏អាចបញ្ចូលលេខកូដអីវ៉ាន់តូចបានដែរ\n',
+          'Ex: s:7358588...., s:YT7591014..., s:SF3295989...'
+        )
       );
       invalidMessage.chadId = chatId;
       invalidMessage.messageId = message.message_id;
@@ -761,7 +825,24 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       bot.sendMessage(msg.chat.id, '❌ Sorry, invalid Code. Please try again.');
       return;
     }
-    const logCode = msg.text?.trim();
+    const logCode = msg.text?.trim() || '';
+
+    const isValidStartsWith = logCode.startsWith('25');
+    if (
+      !isValidStartsWith ||
+      (isValidStartsWith && logCode.length !== '251209180405'.length)
+    ) {
+      bot.sendMessage(
+        msg.chat.id,
+        'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
+          logCode.startsWith('1757')
+            ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
+            : '',
+          '❌ Sorry, invalid code. Please try again.'
+        )
+      );
+      return;
+    }
     await onTextNumberAction(bot, msg, logCode);
   });
 
