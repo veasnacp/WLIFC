@@ -4,6 +4,7 @@ import { WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
 import { chunkArray, removeDuplicateObjArray } from '../utils/is';
 import { PUBLIC_URL } from '../config/constants';
+import translate from '@iamtraction/google-translate';
 
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
@@ -20,15 +21,10 @@ export function isMemberAsAdmin(msg: TelegramBot.Message) {
   );
 }
 
-interface MiniAppData {
-  action: string;
-  timestamp: string;
-  user_id: number | string;
-}
-
 export const LOADING_TEXT =
   'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
 const MAX_CAPTION_LENGTH = 1024;
+const MAX_TEXT_LENGTH = 4096;
 
 const currentDate = {
   date: new Date(),
@@ -88,12 +84,26 @@ export const deleteInlineKeyboardButton = {
   callback_data: 'delete',
 } as TelegramBot.InlineKeyboardButton;
 export function sendMessageOptions(
-  options?: TelegramBot.SendMessageOptions | TelegramBot.SendPhotoOptions
+  options?: (TelegramBot.SendMessageOptions | TelegramBot.SendPhotoOptions) &
+    Partial<{
+      inlineKeyboardButtons: TelegramBot.InlineKeyboardButton[];
+      translateText: string;
+    }>
 ) {
+  const { inlineKeyboardButtons, translateText } = options || {};
+  let defaultInlineKeyboardButtons = [deleteInlineKeyboardButton];
+  if (inlineKeyboardButtons?.length) {
+    defaultInlineKeyboardButtons.push(...inlineKeyboardButtons);
+  }
+  if (translateText?.trim()) {
+    defaultInlineKeyboardButtons.push(
+      translateInlineKeyboardButton('zh', translateText)
+    );
+  }
   return {
     ...options,
     reply_markup: {
-      inline_keyboard: [[deleteInlineKeyboardButton]],
+      inline_keyboard: [defaultInlineKeyboardButtons],
       ...options?.reply_markup,
     },
   } as TelegramBot.SendMessageOptions;
@@ -124,6 +134,12 @@ export const adminInlineKeyboardButtons = [
 
 type AdminInlineKeyboardAction =
   (typeof adminInlineKeyboardButtons)[number]['callback_data'];
+
+export const translateInlineKeyboardButton = (from: string, text: string) =>
+  ({
+    text: 'បកប្រែឈ្មោះទំនិញ',
+    callback_data: 'tr_from_'.concat(from, '|', text),
+  } as TelegramBot.InlineKeyboardButton);
 
 export async function onTextNumberAction(
   bot: TelegramBot,
@@ -167,6 +183,7 @@ export async function onTextNumberAction(
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
+    wl.asAdminMember = isMemberAsAdmin(msg);
     wl.onError = function (error) {
       bot
         .sendMessage(chatId, 'oOP! Unavailable to access data.')
@@ -225,9 +242,13 @@ export async function onTextNumberAction(
       }
     }
     let photos = [] as string[];
+    let media = [] as TelegramBot.InputMedia[];
     if (data && typeof data.warehousing_pic === 'string') {
-      photos = wl.getPhotoFromData(data);
+      const mediaData = wl.getMediasFromData(data);
+      photos = mediaData.photos;
+      media = mediaData.medias;
     }
+    let textMessage: string | undefined;
     let caption: string | undefined;
 
     if (data) {
@@ -245,11 +266,20 @@ export async function onTextNumberAction(
           }
         }
       }
-      caption = ''
+      textMessage = ''
         .concat(
-          `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ | ទូរ: ${data.container_num?.split('-').slice(1).join('.')||'N/A'}\n`,
+          `- លេខបុង: ${
+            isTrackingNumber ? data.logcode : logCode
+          } ✅ ទូរចុងក្រោយ: ${
+            data.container_num?.split('-').slice(1).join('.') || 'N/A'
+          }\n`,
           `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
           `- ចំនួន: ${data.goods_number}\n`,
+          'goods_numbers' in data &&
+            Array.isArray(data.goods_numbers) &&
+            data.goods_numbers.length > 1
+            ? `- ចំនួនបែងចែកទូរ: [${data.goods_numbers.join(', ')}]\n`
+            : '',
           `- ទម្ងន់: ${data.weight}kg\n`,
           `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
           `- ម៉ែត្រគូបផ្សេងគ្នា: ${
@@ -275,24 +305,11 @@ export async function onTextNumberAction(
           }\n`,
           `- ផ្សេងៗ: ${data.desc}\n`
         )
-        .substring(0, MAX_CAPTION_LENGTH);
+        .substring(0, MAX_TEXT_LENGTH);
+      caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
     }
 
     const showMoreCaption = async () => {
-      try {
-        if (data?.goods_name) {
-          const url = `https://translate.google.com/?sl=auto&tl=km&text=${data.goods_name}&op=translate`;
-          await bot.sendMessage(
-            chatId,
-            `<a href="${url}">បកប្រែឈ្មោះទំនិញ</a>`,
-            {
-              parse_mode: 'HTML',
-            }
-          );
-        }
-      } catch (error) {
-        console.error('Error Translate:', (error as Error).message);
-      }
       if (data && options?.withMore) {
         await bot.sendMessage(
           chatId,
@@ -334,7 +351,7 @@ export async function onTextNumberAction(
                   )
                 : ''
             )
-            .substring(0, MAX_CAPTION_LENGTH),
+            .substring(0, MAX_TEXT_LENGTH),
           sendMessageOptions({
             parse_mode: 'HTML',
           })
@@ -342,16 +359,16 @@ export async function onTextNumberAction(
       }
     };
 
-    const media = photos.map((p, i) => ({
-      type: 'photo',
-      media: p,
-      ...(i === 0 && caption ? { caption } : {}),
-    })) as TelegramBot.InputMedia[];
+    // const media = photos.map((p, i) => ({
+    //   type: 'photo',
+    //   media: p,
+    //   // ...(i === 0 && caption ? { caption } : {}),
+    // })) as TelegramBot.InputMedia[];
 
-    if (caption && photos.length === 0) {
+    if (textMessage && photos.length === 0) {
       await bot.sendMessage(
         chatId,
-        `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${caption}`,
+        `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${textMessage}`,
         sendMessageOptions()
       );
       if (data?.smallPackageGoodsNames?.length && data.subLogCodes) {
@@ -370,34 +387,6 @@ export async function onTextNumberAction(
       return;
     }
 
-    // Error images show button link instead
-    const showButtonImageLink = (errorMessageId?: number) => {
-      if (caption && photos.length) {
-        const url = PUBLIC_URL.concat(
-          '/wl/display-image?image=',
-          photos.map((p) => p.split('/').at(-1)).join(','),
-          `&path=${process.env.WL_PUBLIC_URL?.concat('/upload') || ''}`
-        );
-        bot.sendMessage(
-          chatId,
-          `🏞### រូបភាពមានបញ្ហា សូមចុចប៊ូតុងខាងក្រោម ###🏞 \n\n${caption}`,
-          sendMessageOptions({
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: `បង្ហាញរូបភាព`, web_app: { url } },
-                  deleteInlineKeyboardButton,
-                ],
-              ],
-            },
-          })
-        );
-        if (errorMessageId) {
-          bot.deleteMessage(chatId, errorMessageId).catch();
-        }
-      }
-    };
-
     let errorMessageId: number | undefined;
     // Send the final generated photo
     let isError = false;
@@ -409,6 +398,7 @@ export async function onTextNumberAction(
             photo,
             sendMessageOptions({
               caption,
+              translateText: logCode,
             })
           )
           .then(async () => {
@@ -440,10 +430,11 @@ export async function onTextNumberAction(
     } else {
       const medias = chunkArray(media, 10);
       const sendMediaGroup = async (medias: TelegramBot.InputMedia[][]) => {
+        isError = false;
         for (let i = 0; i < medias.length; i++) {
           await bot
             .sendMediaGroup(chatId, medias[i])
-            .then((sentMessages) => {
+            .then(async (sentMessages) => {
               console.log(
                 `Successfully sent an album with ${sentMessages.length} items.`
               );
@@ -478,11 +469,19 @@ export async function onTextNumberAction(
         await sendMediaGroup(medias);
         if (errorMessageId) {
           await bot.deleteMessage(chatId, errorMessageId).catch();
-          bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
+          await bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
         }
-      } else {
-        await showMoreCaption();
       }
+      if (caption) {
+        await bot.sendMessage(
+          chatId,
+          caption,
+          sendMessageOptions({
+            translateText: logCode,
+          })
+        );
+      }
+      await showMoreCaption();
     }
     await bot.deleteMessage(chatId, loadingMsgId);
   } catch (error) {
@@ -745,9 +744,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/resetData/, resetData);
   bot.onText(/\/clear/, clearAll);
 
-  bot.on('callback_query', function onCallbackQuery(callbackQuery) {
-    const action = callbackQuery.data;
-    const msg = callbackQuery.message;
+  bot.on('callback_query', async function onCallbackQuery(query) {
+    const action = query.data;
+    const msg = query.message;
     const chatId = msg?.chat.id;
     try {
       if (chatId) {
@@ -756,6 +755,30 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             bot.deleteMessage(chatId, msg.message_id);
           } catch (error) {
             console.error('Error delete message:', (error as Error).message);
+          }
+        } else if (action?.startsWith('tr_from_')) {
+          let from = action.replace('tr_from_', '');
+          if (from.startsWith('zh|')) {
+            const logCode = from.replace('zh|', '').trim();
+            const data = cacheData.get(logCode);
+            const text = data?.goods_name.trim();
+            if (!text) return;
+            try {
+              const loadingMessage = await bot.sendMessage(
+                chatId,
+                '⏳ កំពុងបកប្រែ សូមមេត្តារងចាំបន្តិចសិន...'
+              );
+              const res = await translate(text, { to: 'km' });
+              bot.editMessageText(`${text} \n👉👉👉 ${res.text}`, {
+                chat_id: chatId,
+                message_id: loadingMessage.message_id,
+              });
+            } catch (error) {
+              console.error((error as Error).message);
+              bot.answerCallbackQuery(query.id, {
+                text: '❌ Translation failed!',
+              });
+            }
           }
         } else {
           switch (action as AdminInlineKeyboardAction) {
@@ -799,7 +822,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const showAllSmallPackage = text.startsWith('sm:');
       const logCode = text.slice(showAllSmallPackage ? 3 : 2).trim();
       const isValidSmallPackageLogCode =
-        logCode.length >= 13 && logCode.length <= 15;
+        logCode.length >= 12 && logCode.length <= 15;
       if (!isValidSmallPackageLogCode) {
         bot.sendMessage(
           msg.chat.id,

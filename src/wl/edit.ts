@@ -1,9 +1,16 @@
-import { removeDuplicateArray } from '../utils/is';
+import { removeDuplicateArray, removeDuplicateObjArray } from '../utils/is';
 import { Data } from './types';
+
+type MediaType = {
+  type: 'photo';
+  media: string;
+  caption?: string;
+};
 
 export class WLLogistic {
   private _currentLogCode: string | number = '';
   private _cookie: string = '';
+  asAdminMember = false;
   headers: HeadersInit = {};
   constructor(logCode: string, cookie: string) {
     this._currentLogCode = logCode;
@@ -127,6 +134,7 @@ export class WLLogistic {
           warehousing_pic: [] as string[],
           goods_name: [] as string[],
         };
+        const medias = [] as MediaType[];
         const dataUpdateKeys = Object.keys(
           dataUpdate
         ) as (keyof typeof dataUpdate)[];
@@ -147,8 +155,70 @@ export class WLLogistic {
                 } else if (k === 'goods_name' && d.material?.trim()) {
                   value = `${d.goods_name} (${d.material})`;
                 }
-                // @ts-ignore
-                dataUpdate[k].push(value);
+                if (
+                  k === 'warehousing_pic' &&
+                  typeof value === 'string' &&
+                  value
+                ) {
+                  value
+                    .trim()
+                    .split(',')
+                    .forEach((image) => {
+                      const media =
+                        medias.length && medias.find((m) => m.media === image);
+                      if (!media) {
+                        const more = () => {
+                          let text = `- ផ្សេងៗ: ${d.desc}\n`;
+                          if (this.asAdminMember) {
+                            try {
+                              text = `\n===== Express Tracking =====\n`.concat(
+                                removeDuplicateObjArray(
+                                  JSON.parse(d.expresstracking) as Array<
+                                    Record<'time' | 'text' | 'remark', string>
+                                  >,
+                                  'text'
+                                )
+                                  .map(
+                                    (d) =>
+                                      `🔹 ${d.text}: ${d.time}${
+                                        d.remark ? `(${d.remark})` : ''
+                                      }`
+                                  )
+                                  .join('\n')
+                              );
+                            } catch {}
+                          }
+                          return text;
+                        };
+                        const caption = ''
+                          .concat(
+                            `- ទំនិញ: ${d.goods_name}${
+                              d.material?.trim() ? ` (${d.material})` : ''
+                            }\n`,
+                            `- TN: ${d.sub_logcode || 'N/A'}\n`,
+                            `- ចំនួន: ${d.goods_number}\n`,
+                            `- ទម្ងន់: ${d.weight}kg\n`,
+                            `- ម៉ែត្រគូបសរុប: ${d.volume}m³\n`,
+                            `- ម៉ែត្រគូបផ្សេងគ្នា: ${
+                              d.volume_record
+                                ?.replace(/\<br\>/, '')
+                                .replace(/\<br\>/g, ',') || 'N/A'
+                            }\n`,
+                            more(),
+                            '\n\n\n...'
+                          )
+                          .substring(0, 1024);
+                        medias.push({
+                          type: 'photo',
+                          media: image,
+                          caption,
+                        });
+                      }
+                    });
+                }
+                if (value)
+                  // @ts-ignore
+                  dataUpdate[k].push(value);
               });
             }
             return acc;
@@ -175,7 +245,7 @@ export class WLLogistic {
             }
           });
         }
-        return data;
+        return { ...data, medias, goods_numbers: dataUpdate.goods_number };
       } else {
         return { message: 'not found' } as const;
       }
@@ -187,8 +257,38 @@ export class WLLogistic {
   getPhotoFromData(data: Data) {
     return data.warehousing_pic
       .split(',')
-      .filter(v => Boolean(v) && v !== 'null')
+      .filter((v) => Boolean(v) && v !== 'null')
       .map((p) => `${process.env.WL_PUBLIC_URL}/upload/${p}`);
+  }
+  getMediasFromData(data: Data | (Data & { medias: MediaType[] })) {
+    if ('medias' in data) {
+      return data.medias.reduce(
+        (acc, prev) => {
+          if (
+            prev.media &&
+            prev.media !== 'null' &&
+            !acc.photos.includes(prev.media)
+          ) {
+            const m = {
+              ...prev,
+              media: `${process.env.WL_PUBLIC_URL}/upload/${prev.media}`,
+            };
+            acc.medias.push(m);
+            acc.photos.push(m.media);
+          }
+          return acc;
+        },
+        { medias: [] as MediaType[], photos: [] as string[] }
+      );
+    } else {
+      const photos = this.getPhotoFromData(data);
+      const medias = photos.map((p) => ({
+        type: 'photo',
+        media: p,
+        caption: data.goods_name,
+      })) as MediaType[];
+      return { medias, photos };
+    }
   }
   onError(error: Error) {}
 }
