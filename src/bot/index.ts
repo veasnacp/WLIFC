@@ -138,6 +138,8 @@ export async function onTextNumberAction(
   const chatId = msg.chat.id;
   if (!logCode) return;
 
+  const isTrackingNumber = !logCode.startsWith('25');
+
   if (
     config
       .get('bannedUsers')
@@ -245,7 +247,7 @@ export async function onTextNumberAction(
       }
       caption = ''
         .concat(
-          `- លេខបុង: ${logCode} ✅\n`,
+          `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ | ទូរ: ${data.container_num?.split('-').slice(1).join('.')||'N/A'}\n`,
           `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
           `- ចំនួន: ${data.goods_number}\n`,
           `- ទម្ងន់: ${data.weight}kg\n`,
@@ -277,6 +279,20 @@ export async function onTextNumberAction(
     }
 
     const showMoreCaption = async () => {
+      try {
+        if (data?.goods_name) {
+          const url = `https://translate.google.com/?sl=auto&tl=km&text=${data.goods_name}&op=translate`;
+          await bot.sendMessage(
+            chatId,
+            `<a href="${url}">បកប្រែឈ្មោះទំនិញ</a>`,
+            {
+              parse_mode: 'HTML',
+            }
+          );
+        }
+      } catch (error) {
+        console.error('Error Translate:', (error as Error).message);
+      }
       if (data && options?.withMore) {
         await bot.sendMessage(
           chatId,
@@ -285,7 +301,7 @@ export async function onTextNumberAction(
               `<b>Container Number:</b> ${data.container_num}\n`,
               `<b>Member Name:</b> ${data.member_name}\n`,
               `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
-              data.from_address.trim() && data.to_address.trim()
+              data.from_address?.trim() && data.to_address?.trim()
                 ? ''.concat(
                     `<b>Form Name:</b> ${data.from_name}${
                       data.from_phone ? ` (${data.from_phone})` : ''
@@ -347,6 +363,7 @@ export async function onTextNumberAction(
           sendMessageOptions()
         );
       }
+
       await showMoreCaption();
       // Delete the temporary loading message
       await bot.deleteMessage(chatId, loadingMsgId);

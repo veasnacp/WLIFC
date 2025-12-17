@@ -187,7 +187,7 @@ export class WLLogistic {
   getPhotoFromData(data: Data) {
     return data.warehousing_pic
       .split(',')
-      .filter(Boolean)
+      .filter(v => Boolean(v) && v !== 'null')
       .map((p) => `${process.env.WL_PUBLIC_URL}/upload/${p}`);
   }
   onError(error: Error) {}
