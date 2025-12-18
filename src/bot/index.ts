@@ -816,12 +816,13 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
 
     if (
+      text.toLowerCase().startsWith('c:') ||
       text.toLowerCase().startsWith('s:') ||
       text.toLowerCase().startsWith('sm:')
     ) {
       const showAllSmallPackage = text.startsWith('sm:');
       const logCode = text.slice(showAllSmallPackage ? 3 : 2).trim();
-      const isValidSmallPackageLogCode =
+      const isValidSmallPackageLogCode = logCode.startsWith('1757') ? logCode.length === 10 :
         logCode.length >= 12 && logCode.length <= 15;
       if (!isValidSmallPackageLogCode) {
         bot.sendMessage(
@@ -846,8 +847,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const message = await bot.sendMessage(
         chatId,
         `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊\n`.concat(
-          'ឥឡូវនេះអ្នកក៏អាចបញ្ចូលលេខកូដអីវ៉ាន់តូចបានដែរ\n',
-          'Ex: s:7358588...., s:YT7591014..., s:SF3295989...'
+          'ឥឡូវនេះអ្នកក៏អាចបញ្ចូលលេខកូដ(Tracking Number)ផ្សេងទៀតបានដែរ\n',
+          'Ex: s:735858...., s:YT7591..., s:SF3295..., s:JT3145...'
         )
       );
       invalidMessage.chadId = chatId;
