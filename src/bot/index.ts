@@ -55,6 +55,7 @@ type ConfigCache = {
   WL_MEMBERS_LIST: string[];
   bannedUsers: string[];
   status: 'sleep' | 'deactivated';
+  statusMessage: string;
 };
 type PreMapConfig = Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>;
 type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
@@ -232,13 +233,15 @@ export async function onTextNumberAction(
 ) {
   const chatId = msg.chat.id;
   const status = config.get('status');
+  const customStatusMessage = config.get('statusMessage');
   if (status === 'sleep') {
     bot.sendMessage(
       chatId,
-      ''.concat(
-        'ខ្ញុំជាប់រវល់ហើយ\n',
-        "🤪🤪 Sorry, I'm so busy. Please waiting..."
-      )
+      customStatusMessage?.trim() ||
+        ''.concat(
+          'ខ្ញុំជាប់រវល់ហើយ\n',
+          "🤪🤪 Sorry, I'm so busy. Please wait..."
+        )
     );
     return;
   }
@@ -784,8 +787,12 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/clear/, clearAll);
   bot.onText(/\/status (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const text = match?.[1];
+    const [text, ...other] = match?.[1].split('|') || [];
     if (isAdmin(msg)) {
+      const customStatusMessage = other?.join('|');
+      if (customStatusMessage) {
+        config.set('statusMessage', customStatusMessage);
+      }
       if (text === 'sleep') config.set('status', text);
       bot
         .sendMessage(
