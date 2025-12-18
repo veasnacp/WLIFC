@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import path from 'path';
-import { WLLogistic } from '../wl/edit';
+import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
 import { chunkArray, removeDuplicateObjArray } from '../utils/is';
 import { PUBLIC_URL } from '../config/constants';
@@ -54,6 +54,7 @@ type ConfigCache = {
   cookie: string;
   WL_MEMBERS_LIST: string[];
   bannedUsers: string[];
+  status: 'sleep' | 'deactivated';
 };
 type PreMapConfig = Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>;
 type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
@@ -64,7 +65,7 @@ type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
   ) => MapConfig;
 };
 
-const cacheData = new Map<string, Data>(DATA);
+const cacheData = new Map<string, DataExpand>(DATA);
 const config = new Map() as MapConfig;
 config.set(
   'WL_MEMBERS_LIST',
@@ -86,11 +87,15 @@ export const deleteInlineKeyboardButton = {
 export function sendMessageOptions(
   options?: (TelegramBot.SendMessageOptions | TelegramBot.SendPhotoOptions) &
     Partial<{
+      msg: TelegramBot.Message;
       inlineKeyboardButtons: TelegramBot.InlineKeyboardButton[];
       translateText: string;
+      logCodeForShowMore: string;
     }>
 ) {
-  const { inlineKeyboardButtons, translateText } = options || {};
+  const { msg, inlineKeyboardButtons, translateText, logCodeForShowMore } =
+    options || {};
+  const isAsAdmin = msg && isMemberAsAdmin(msg);
   let defaultInlineKeyboardButtons = [deleteInlineKeyboardButton];
   if (inlineKeyboardButtons?.length) {
     defaultInlineKeyboardButtons.push(...inlineKeyboardButtons);
@@ -100,10 +105,16 @@ export function sendMessageOptions(
       translateInlineKeyboardButton('zh', translateText)
     );
   }
+  const inline_keyboard = [defaultInlineKeyboardButtons];
+  if (logCodeForShowMore && isAsAdmin) {
+    inline_keyboard.push([
+      showMoreDataInlineKeyboardButton(logCodeForShowMore),
+    ]);
+  }
   return {
     ...options,
     reply_markup: {
-      inline_keyboard: [defaultInlineKeyboardButtons],
+      inline_keyboard,
       ...options?.reply_markup,
     },
   } as TelegramBot.SendMessageOptions;
@@ -141,17 +152,96 @@ export const translateInlineKeyboardButton = (from: string, text: string) =>
     callback_data: 'tr_from_'.concat(from, '|', text),
   } as TelegramBot.InlineKeyboardButton);
 
+export const showMoreDataInlineKeyboardButton = (logCode: string) =>
+  ({
+    text: 'Show More',
+    callback_data: 'show_more_data'.concat(logCode),
+  } as TelegramBot.InlineKeyboardButton);
+
+type OnTextNumberActionOptions = {
+  withMore: boolean;
+  showAllSmallPackage: boolean;
+  isSubLogCode: boolean;
+};
+
+export const showMoreDataCaption = async (
+  bot: TelegramBot,
+  chatId: TelegramBot.ChatId,
+  data: DataExpand | undefined
+) => {
+  if (data) {
+    await bot.sendMessage(
+      chatId,
+      ''
+        .concat(
+          `<b>Container Number:</b> <code>${data.container_num}</code>\n`,
+          `<b>Member Name:</b> ${data.member_name}\n`,
+          `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
+          data.from_address?.trim() && data.to_address?.trim()
+            ? ''.concat(
+                `<b>Form Name:</b> ${data.from_name}${
+                  data.from_phone ? ` (${data.from_phone})` : ''
+                }\n`,
+                `<b>Form Address:</b> ${data.from_address}\n`,
+                `<b>To Name:</b> ${data.to_name}${
+                  data.to_phone ? ` (${data.to_phone})` : ''
+                }\n`,
+                `<b>To Address:</b> ${data.to_address}\n`
+              )
+            : '',
+          `<b>Total: <code>$${Number(data.total).toFixed(2)}</code></b> (${
+            !!data.payment_status ? 'Paid' : 'Unpaid'
+          })\n`,
+          data.expresstracking
+            ? `\n===== Express Tracking =====\n`.concat(
+                removeDuplicateObjArray(
+                  JSON.parse(data.expresstracking) as Array<
+                    Record<'time' | 'text' | 'remark', string>
+                  >,
+                  'text'
+                )
+                  .map(
+                    (d) =>
+                      `<b>${d.text}:</b> ${d.time}${
+                        d.remark ? `(${d.remark})` : ''
+                      }`
+                  )
+                  .join('\n')
+              )
+            : '',
+          data.sub_logcode
+            ? `\n\n${data.sub_logcode
+                .split('@')
+                .map((v, i) => `${i + 1}. <code>${v}</code>`)
+                .join('\n')}`
+            : ''
+        )
+        .substring(0, MAX_TEXT_LENGTH),
+      sendMessageOptions({
+        parse_mode: 'HTML',
+      })
+    );
+  }
+};
+
 export async function onTextNumberAction(
   bot: TelegramBot,
   msg: TelegramBot.Message,
   logCode: string | undefined,
-  options?: Partial<{
-    withMore: boolean;
-    showAllSmallPackage: boolean;
-    isSubLogCode: boolean;
-  }>
+  options?: Partial<OnTextNumberActionOptions>
 ) {
   const chatId = msg.chat.id;
+  const status = config.get('status');
+  if (status === 'sleep') {
+    bot.sendMessage(
+      chatId,
+      ''.concat(
+        'ខ្ញុំជាប់រវល់ហើយ\n',
+        "🤪🤪 Sorry, I'm so busy. Please waiting..."
+      )
+    );
+    return;
+  }
   if (!logCode) return;
 
   const isTrackingNumber = !logCode.startsWith('25');
@@ -192,13 +282,7 @@ export async function onTextNumberAction(
           invalidMessage.messageId = message.message_id;
         });
     };
-    let data:
-      | (Data & {
-          isSmallPackage?: boolean;
-          smallPackageGoodsNames?: string[];
-          subLogCodes?: string[];
-        })
-      | undefined;
+    let data: DataExpand | undefined;
     let _logCode = logCode;
     if (options?.showAllSmallPackage)
       cacheData.keys().find((k) => {
@@ -266,19 +350,20 @@ export async function onTextNumberAction(
           }
         }
       }
+      const goods_numbers =
+        'goods_numbers' in data &&
+        Array.isArray(data.goods_numbers) &&
+        data.goods_numbers;
+      const isSplitting = goods_numbers && goods_numbers.length > 1;
       textMessage = ''
         .concat(
-          `- លេខបុង: ${
-            isTrackingNumber ? data.logcode : logCode
-          } ✅ ទូរចុងក្រោយ: ${
-            data.container_num?.split('-').slice(1).join('.') || 'N/A'
-          }\n`,
+          `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ ${
+            isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
+          }: ${data.container_num?.split('-').slice(1).join('.') || 'N/A'}\n`,
           `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
           `- ចំនួន: ${data.goods_number}\n`,
-          'goods_numbers' in data &&
-            Array.isArray(data.goods_numbers) &&
-            data.goods_numbers.length > 1
-            ? `- ចំនួនបែងចែកទូរ: [${data.goods_numbers.join(', ')}]\n`
+          isSplitting
+            ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n`
             : '',
           `- ទម្ងន់: ${data.weight}kg\n`,
           `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
@@ -309,61 +394,8 @@ export async function onTextNumberAction(
       caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
     }
 
-    const showMoreCaption = async () => {
-      if (data && options?.withMore) {
-        await bot.sendMessage(
-          chatId,
-          ''
-            .concat(
-              `<b>Container Number:</b> ${data.container_num}\n`,
-              `<b>Member Name:</b> ${data.member_name}\n`,
-              `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
-              data.from_address?.trim() && data.to_address?.trim()
-                ? ''.concat(
-                    `<b>Form Name:</b> ${data.from_name}${
-                      data.from_phone ? ` (${data.from_phone})` : ''
-                    }\n`,
-                    `<b>Form Address:</b> ${data.from_address}\n`,
-                    `<b>To Name:</b> ${data.to_name}${
-                      data.to_phone ? ` (${data.to_phone})` : ''
-                    }\n`,
-                    `<b>To Address:</b> ${data.to_address}\n`
-                  )
-                : '',
-              `<b>Total: $${Number(data.total).toFixed(2)}</b> (${
-                !!data.payment_status ? 'Paid' : 'Unpaid'
-              })\n`,
-              data.expresstracking
-                ? `\n===== Express Tracking =====\n`.concat(
-                    removeDuplicateObjArray(
-                      JSON.parse(data.expresstracking) as Array<
-                        Record<'time' | 'text' | 'remark', string>
-                      >,
-                      'text'
-                    )
-                      .map(
-                        (d) =>
-                          `<b>${d.text}:</b> ${d.time}${
-                            d.remark ? `(${d.remark})` : ''
-                          }`
-                      )
-                      .join('\n')
-                  )
-                : ''
-            )
-            .substring(0, MAX_TEXT_LENGTH),
-          sendMessageOptions({
-            parse_mode: 'HTML',
-          })
-        );
-      }
-    };
-
-    // const media = photos.map((p, i) => ({
-    //   type: 'photo',
-    //   media: p,
-    //   // ...(i === 0 && caption ? { caption } : {}),
-    // })) as TelegramBot.InputMedia[];
+    const showMoreCaption = () =>
+      options?.withMore && showMoreDataCaption(bot, chatId, data);
 
     if (textMessage && photos.length === 0) {
       await bot.sendMessage(
@@ -399,6 +431,7 @@ export async function onTextNumberAction(
             sendMessageOptions({
               caption,
               translateText: logCode,
+              logCodeForShowMore: logCode,
             })
           )
           .then(async () => {
@@ -478,6 +511,8 @@ export async function onTextNumberAction(
           caption,
           sendMessageOptions({
             translateText: logCode,
+            logCodeForShowMore: logCode,
+            msg,
           })
         );
       }
@@ -716,12 +751,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const loggingData = Array.from(loggingCache.values());
     if (loggingData.length) {
       try {
-        bot.sendMessage(chatId, loggingData.join('\n'), sendMessageOptions());
+        bot.sendMessage(
+          chatId,
+          loggingData.join('\n'),
+          sendMessageOptions({ parse_mode: 'HTML' })
+        );
       } catch {}
     }
   };
 
-  bot.onText(/\/showButtons/, (msg) => {
+  bot.onText(/(\/showButtons|\/btn)/, (msg) => {
     const chatId = msg.chat.id;
 
     if (isAdmin(msg))
@@ -743,6 +782,19 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/getConfigUsers/, getConfigUsers);
   bot.onText(/\/resetData/, resetData);
   bot.onText(/\/clear/, clearAll);
+  bot.onText(/\/status (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const text = match?.[1];
+    if (isAdmin(msg)) {
+      if (text === 'sleep') config.set('status', text);
+      bot
+        .sendMessage(
+          chatId,
+          'Bot now is '.concat(text || 'running normal', '.')
+        )
+        .catch();
+    }
+  });
 
   bot.on('callback_query', async function onCallbackQuery(query) {
     const action = query.data;
@@ -780,6 +832,11 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
               });
             }
           }
+        } else if (action?.startsWith('show_more_data')) {
+          let logCode = action.replace('show_more_data', '').trim();
+          const data = cacheData.get(logCode);
+          if (!data) return;
+          await showMoreDataCaption(bot, chatId, data);
         } else {
           switch (action as AdminInlineKeyboardAction) {
             case 'getLogCodes':
@@ -822,8 +879,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     ) {
       const showAllSmallPackage = text.startsWith('sm:');
       const logCode = text.slice(showAllSmallPackage ? 3 : 2).trim();
-      const isValidSmallPackageLogCode = logCode.startsWith('1757') ? logCode.length === 10 :
-        logCode.length >= 12 && logCode.length <= 15;
+      const isValidSmallPackageLogCode = logCode.startsWith('1757')
+        ? logCode.length === 10
+        : logCode.length >= 12 && logCode.length <= 15;
       if (!isValidSmallPackageLogCode) {
         bot.sendMessage(
           msg.chat.id,
@@ -893,11 +951,11 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const text = msg.text?.trim() || '';
     const logging = [
       'message',
-      msg.text,
+      text.startsWith('/') ? text : `<code>${text}</code>`,
       'by user:',
       msg.chat.first_name + (msg.chat.username ? `(${msg.chat.username})` : ''),
       'at',
-      currentDate.date.toISOString(),
+      currentDate.date.toLocaleString().replace(',', ' |'),
     ].join(' ');
     if (currentDate.day() === new Date().getDate()) {
       loggingCache.add(logging);

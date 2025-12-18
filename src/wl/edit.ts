@@ -7,6 +7,12 @@ type MediaType = {
   caption?: string;
 };
 
+export type DataExpand = Data & {
+  isSmallPackage?: boolean;
+  smallPackageGoodsNames?: string[];
+  subLogCodes?: string[];
+};
+
 export class WLLogistic {
   private _currentLogCode: string | number = '';
   private _cookie: string = '';
@@ -124,7 +130,6 @@ export class WLLogistic {
         }
 
         const dataUpdate = {
-          sub_total: [] as number[],
           total: [] as number[],
           goods_number: [] as number[],
           weight: [] as number[],
@@ -133,6 +138,7 @@ export class WLLogistic {
           volume_record: [] as string[],
           warehousing_pic: [] as string[],
           goods_name: [] as string[],
+          sub_logcode: [] as string[],
         };
         const medias = [] as MediaType[];
         const dataUpdateKeys = Object.keys(
@@ -148,7 +154,12 @@ export class WLLogistic {
                 let value = d[k];
                 if (
                   !(
-                    ['volume_record', 'warehousing_pic', 'goods_name'] as const
+                    [
+                      'volume_record',
+                      'warehousing_pic',
+                      'goods_name',
+                      'sub_logcode',
+                    ] as const
                   ).some((v) => v === k)
                 ) {
                   value = Number(value);
@@ -215,6 +226,16 @@ export class WLLogistic {
                         });
                       }
                     });
+                } else if (
+                  k === 'sub_logcode' &&
+                  typeof value === 'string' &&
+                  value
+                ) {
+                  value = `${
+                    d.sub_order ? `${d.sub_order} | ` : ''
+                  }${value} | ${d.goods_name} | ${d.weight}kg | ${
+                    d.volume
+                  } | $${d.total}`;
                 }
                 if (value)
                   // @ts-ignore
@@ -234,10 +255,11 @@ export class WLLogistic {
             if (
               k === 'volume_record' ||
               k === 'warehousing_pic' ||
-              k === 'goods_name'
+              k === 'goods_name' ||
+              k === 'sub_logcode'
             ) {
               data[k] = removeDuplicateArray(dataUpdate[k]).join(
-                k !== 'volume_record' ? ',' : ''
+                k !== 'volume_record' ? (k === 'sub_logcode' ? '@' : ',') : ''
               );
             } else {
               // @ts-ignore
