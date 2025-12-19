@@ -62,7 +62,7 @@ const app = new Elysia()
   // Set webhook endpoint
   .get('/api/set-webhook', async () => {
     try {
-      await bot.setWebHook(WEBHOOK_URL);
+      await bot.setWebHook(WEBHOOK_URL, { max_connections: 40 });
       return {
         success: true,
         message: `Webhook set to ${WEBHOOK_URL}`,

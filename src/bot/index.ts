@@ -5,12 +5,26 @@ import { Data } from '../wl/types';
 import { chunkArray, removeDuplicateObjArray } from '../utils/is';
 import { PUBLIC_URL } from '../config/constants';
 import translate from '@iamtraction/google-translate';
+import { Jimp } from 'jimp';
+import {
+  BarcodeFormat,
+  BinaryBitmap,
+  DecodeHintType,
+  HybridBinarizer,
+  MultiFormatReader,
+  RGBLuminanceSource,
+} from '@zxing/library';
 
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
+const ADMIN_LIST = process.env.ADMIN;
 
 export function isAdmin(msg: TelegramBot.Message) {
-  return process.env.ADMIN?.split(',').some((n) => n === msg.chat.username);
+  const ADMIN_LIST = config.get('ADMIN_LIST') as string[] | undefined;
+  if (!ADMIN_LIST) return false;
+  return ADMIN_LIST.some(
+    (n) => n === (msg.chat.username || msg.chat.first_name)
+  );
 }
 
 export function isMemberAsAdmin(msg: TelegramBot.Message) {
@@ -52,9 +66,10 @@ if (isDev) {
 }
 type ConfigCache = {
   cookie: string;
+  ADMIN_LIST: string[];
   WL_MEMBERS_LIST: string[];
   bannedUsers: string[];
-  status: 'sleep' | 'deactivated';
+  status: 'sleep' | 'deactivated' | 'maintenance' | (string & {});
   statusMessage: string;
 };
 type PreMapConfig = Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>;
@@ -72,7 +87,10 @@ config.set(
   'WL_MEMBERS_LIST',
   WL_MEMBERS_LIST ? WL_MEMBERS_LIST.split(',') : []
 );
+config.set('ADMIN_LIST', ADMIN_LIST ? ADMIN_LIST.split(',') : []);
 config.set('bannedUsers', []);
+if (process.env.BOT_STATUS === 'maintenance')
+  config.set('status', 'maintenance');
 
 const loggingCache = new Set<string>();
 
@@ -165,6 +183,16 @@ type OnTextNumberActionOptions = {
   isSubLogCode: boolean;
 };
 
+export const getFullname = (msg: TelegramBot.Message) => {
+  const {
+    chat: { first_name, last_name, username },
+  } = msg;
+  const fullname =
+    (first_name || 'Unknown') + (last_name ? ` ${last_name}` : '');
+  const fullnameWithUsername = fullname + (username ? `(${username})` : '');
+  return { fullname, fullnameWithUsername };
+};
+
 export const showMoreDataCaption = async (
   bot: TelegramBot,
   chatId: TelegramBot.ChatId,
@@ -232,15 +260,20 @@ export async function onTextNumberAction(
   options?: Partial<OnTextNumberActionOptions>
 ) {
   const chatId = msg.chat.id;
+  const asAdmin = isAdmin(msg);
+  const asAdminMember = isMemberAsAdmin(msg);
   const status = config.get('status');
   const customStatusMessage = config.get('statusMessage');
-  if (status === 'sleep') {
+  if (
+    !asAdmin &&
+    ['sleep', 'deactivated', 'maintenance'].some((t) => t === status)
+  ) {
     bot.sendMessage(
       chatId,
       customStatusMessage?.trim() ||
         ''.concat(
           'ខ្ញុំជាប់រវល់ហើយ\n',
-          "🤪🤪 Sorry, I'm so busy. Please wait..."
+          "🤓🤓 Sorry, I'm too busy. Please wait..."
         )
     );
     return;
@@ -276,7 +309,7 @@ export async function onTextNumberAction(
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
-    wl.asAdminMember = isMemberAsAdmin(msg);
+    wl.asAdminMember = asAdminMember;
     wl.onError = function (error) {
       bot
         .sendMessage(chatId, 'oOP! Unavailable to access data.')
@@ -295,6 +328,7 @@ export async function onTextNumberAction(
       });
     const _data = cacheData.get(_logCode) as typeof data;
     let refetchData = true;
+    let hasSubLogCodeCache = false;
     if (
       _data &&
       typeof _data === 'object' &&
@@ -305,6 +339,19 @@ export async function onTextNumberAction(
       data = _data;
       if (options?.showAllSmallPackage && !_data.smallPackageGoodsNames) {
         refetchData = true;
+      }
+    } else if (options?.isSubLogCode) {
+      const _data = [...cacheData.values()].find((d) =>
+        d.sub_logcode?.includes(logCode)
+      );
+      if (_data && !('message' in _data)) {
+        refetchData = false;
+        data = _data;
+        if (options?.showAllSmallPackage && !_data.smallPackageGoodsNames) {
+          refetchData = true;
+        } else {
+          hasSubLogCodeCache = true;
+        }
       }
     }
     if (refetchData) {
@@ -340,7 +387,7 @@ export async function onTextNumberAction(
 
     if (data) {
       const _logCode = data.subLogCodes ? data.subLogCodes.join('-') : logCode;
-      if (!cacheData.get(_logCode)) {
+      if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
         cacheData.set(_logCode, data);
         if (isDev) {
           const fs = process.getBuiltinModule('fs');
@@ -655,6 +702,14 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
   });
 
+  onTextConfigUserWithAdminPermission(bot, /\/addAdmin (.+)/, {
+    key: 'ADMIN_LIST',
+    type: 'add',
+  });
+  onTextConfigUserWithAdminPermission(bot, /\/removeAdmin (.+)/, {
+    key: 'ADMIN_LIST',
+    type: 'remove',
+  });
   onTextConfigUserWithAdminPermission(bot, /\/addMember (.+)/, {
     key: 'WL_MEMBERS_LIST',
     type: 'add',
@@ -785,7 +840,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/getConfigUsers/, getConfigUsers);
   bot.onText(/\/resetData/, resetData);
   bot.onText(/\/clear/, clearAll);
-  bot.onText(/\/status (.+)/, async (msg, match) => {
+  bot.onText(/\/setStatus (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const [text, ...other] = match?.[1].split('|') || [];
     if (isAdmin(msg)) {
@@ -809,6 +864,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const chatId = msg?.chat.id;
     try {
       if (chatId) {
+        const { fullname, fullnameWithUsername } = getFullname(msg);
         if (action === 'delete') {
           try {
             bot.deleteMessage(chatId, msg.message_id);
@@ -828,6 +884,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                 '⏳ កំពុងបកប្រែ សូមមេត្តារងចាំបន្តិចសិន...'
               );
               const res = await translate(text, { to: 'km' });
+              loggingCache.add(
+                `👉 ${fullname} clicked translate button from log code /${logCode}`
+              );
               bot.editMessageText(`${text} \n👉👉👉 ${res.text}`, {
                 chat_id: chatId,
                 message_id: loadingMessage.message_id,
@@ -841,8 +900,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           }
         } else if (action?.startsWith('show_more_data')) {
           let logCode = action.replace('show_more_data', '').trim();
-          const data = cacheData.get(logCode);
+          let data = cacheData.get(logCode);
+          if (!data && !logCode.startsWith('25')) {
+            data = [...cacheData.values()].find((d) =>
+              d.sub_logcode.includes(logCode)
+            );
+          }
           if (!data) return;
+          loggingCache.add(
+            `👉 ${fullname} clicked show more button from log code /${logCode}`
+          );
           await showMoreDataCaption(bot, chatId, data);
         } else {
           switch (action as AdminInlineKeyboardAction) {
@@ -872,6 +939,33 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
   });
 
+  const onTextCheckLogCodeAction = async (
+    bot: TelegramBot,
+    chatId: TelegramBot.ChatId,
+    msg: TelegramBot.Message,
+    logCode: string,
+    showAllSmallPackage?: boolean
+  ) => {
+    const isValidSmallPackageOrTrackingLogCode = logCode.startsWith('1757')
+      ? logCode.length === 10
+      : logCode.length >= 12 && logCode.length <= 16;
+
+    if (!isValidSmallPackageOrTrackingLogCode) {
+      bot.sendMessage(
+        chatId,
+        ''.concat(
+          'នែ៎ៗៗ! លេខកូដមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n',
+          '❌ Sorry, invalid code. Please try again.'
+        )
+      );
+    } else {
+      await onTextNumberAction(bot, msg, logCode, {
+        showAllSmallPackage,
+        isSubLogCode: true,
+      });
+    }
+  };
+
   bot.onText(/^(?!\/)(?!\d+$).+/, async (msg, match) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim();
@@ -879,51 +973,17 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       return;
     }
 
+    let logCode = text.trim();
+    let showAllSmallPackage = false;
     if (
-      text.toLowerCase().startsWith('c:') ||
-      text.toLowerCase().startsWith('s:') ||
-      text.toLowerCase().startsWith('sm:')
+      logCode.toLowerCase().startsWith('c:') ||
+      logCode.toLowerCase().startsWith('s:') ||
+      logCode.toLowerCase().startsWith('sm:')
     ) {
-      const showAllSmallPackage = text.startsWith('sm:');
-      const logCode = text.slice(showAllSmallPackage ? 3 : 2).trim();
-      const isValidSmallPackageLogCode = logCode.startsWith('1757')
-        ? logCode.length === 10
-        : logCode.length >= 12 && logCode.length <= 15;
-      if (!isValidSmallPackageLogCode) {
-        bot.sendMessage(
-          msg.chat.id,
-          ''.concat(
-            'នែ៎ៗៗ! លេខកូដមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n',
-            '❌ Sorry, invalid code. Please try again.'
-          )
-        );
-        return;
-      } else {
-        const asAdminMember = isMemberAsAdmin(msg);
-        await onTextNumberAction(bot, msg, logCode, {
-          withMore: asAdminMember,
-          showAllSmallPackage,
-          isSubLogCode: true,
-        });
-        return;
-      }
+      showAllSmallPackage = logCode.toLowerCase().startsWith('sm:');
+      logCode = logCode.slice(showAllSmallPackage ? 3 : 2).trim();
     }
-    try {
-      const message = await bot.sendMessage(
-        chatId,
-        `${msg.chat.first_name}! សូមបញ្ចូលលេខបុងរបស់អ្នក​ 😊\n`.concat(
-          'ឥឡូវនេះអ្នកក៏អាចបញ្ចូលលេខកូដ(Tracking Number)ផ្សេងទៀតបានដែរ\n',
-          'Ex: s:735858...., s:YT7591..., s:SF3295..., s:JT3145...'
-        )
-      );
-      invalidMessage.chadId = chatId;
-      invalidMessage.messageId = message.message_id;
-    } catch (error) {
-      console.error(
-        'Error sending simple text message:',
-        (error as Error).message
-      );
-    }
+    onTextCheckLogCodeAction(bot, chatId, msg, logCode, showAllSmallPackage);
   });
 
   bot.onText(integerRegExp, async (msg, match) => {
@@ -932,37 +992,48 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       return;
     }
     const logCode = msg.text?.trim() || '';
-
+    const options = {} as Partial<OnTextNumberActionOptions>;
     const isValidStartsWith = logCode.startsWith('25');
+    const isOldLogCode = logCode.startsWith('1757');
+    const isValidSmallPackageOrTrackingLogCode = isOldLogCode
+      ? logCode.length === 10
+      : logCode.length >= 12 && logCode.length <= 16;
     if (
       !isValidStartsWith ||
       (isValidStartsWith && logCode.length !== '251209180405'.length)
     ) {
-      bot.sendMessage(
-        msg.chat.id,
-        'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
-          logCode.startsWith('1757')
-            ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
-            : '',
-          '❌ Sorry, invalid code. Please try again.'
-        )
-      );
-      return;
+      if (!isValidSmallPackageOrTrackingLogCode) {
+        bot.sendMessage(
+          msg.chat.id,
+          'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
+            isOldLogCode
+              ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
+              : '',
+            '❌ Sorry, invalid code. Please try again.'
+          )
+        );
+        return;
+      } else {
+        options.isSubLogCode = true;
+      }
     }
-    await onTextNumberAction(bot, msg, logCode);
+    await onTextNumberAction(bot, msg, logCode, options);
   });
 
   // Listen for data sent back from the Mini App (via tg.sendData)
   bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
+    const {
+      chat: { id: chatId, first_name, last_name, username },
+    } = msg;
+    const { fullname, fullnameWithUsername } = getFullname(msg);
     const text = msg.text?.trim() || '';
     const logging = [
       'message',
       text.startsWith('/') ? text : `<code>${text}</code>`,
       'by user:',
-      msg.chat.first_name + (msg.chat.username ? `(${msg.chat.username})` : ''),
+      fullnameWithUsername,
       'at',
-      currentDate.date.toLocaleString().replace(',', ' |'),
+      new Date().toLocaleString().replace(',', ' |'),
     ].join(' ');
     if (currentDate.day() === new Date().getDate()) {
       loggingCache.add(logging);
@@ -971,7 +1042,29 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
     console.log(logging);
 
+    const asAdmin = isAdmin(msg);
     const asAdminMember = isMemberAsAdmin(msg);
+    if (
+      [
+        '/add',
+        '/remove',
+        '/add',
+        '/remove',
+        '/get',
+        '/set',
+        '/reset',
+        '/clear',
+        '/show',
+      ].some((t) => text.startsWith(t)) &&
+      !asAdmin
+    ) {
+      await bot.sendMessage(
+        chatId,
+        `Hey, <b>${fullname}</b>!\n⚠️ You don't have permission this use this action.`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
     const { chadId, messageId } = { ...invalidMessage };
     if (chadId && messageId) {
       try {
@@ -988,9 +1081,78 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const t = text.slice(1);
       const isNumeric = integerRegExp.test(t);
       if (isNumeric) {
-        await onTextNumberAction(bot, msg, t, { withMore: asAdminMember });
+        await onTextNumberAction(bot, msg, t);
       }
     }
   });
+
+  bot.on('photo', async (msg) => {
+    const chatId = msg.chat.id;
+
+    // Telegram sends multiple sizes; the last one is usually the highest resolution
+    const fileId = msg.photo?.[msg.photo.length - 1].file_id as string;
+
+    try {
+      const loadingMessage = await bot.sendMessage(
+        chatId,
+        '🧐 Scanning image, please wait...'
+      );
+      const fileLink = await bot.getFileLink(fileId);
+      const image = await Jimp.read(fileLink);
+      const { width, height, data } = image.bitmap;
+
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.CODE_39,
+      ]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+
+      const reader = new MultiFormatReader();
+      reader.setHints(hints);
+
+      const len = width * height;
+      const luminances = new Uint8ClampedArray(len);
+      for (let i = 0; i < len; i++) {
+        luminances[i] = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3;
+      }
+
+      const source = new RGBLuminanceSource(luminances, width, height);
+      const bitmap = new BinaryBitmap(new HybridBinarizer(source));
+
+      // Decode and respond
+      const result = reader.decode(bitmap);
+      const logCode = result.getText().trim();
+
+      bot
+        .editMessageText(`លេខកូដ: \`${logCode}\``, {
+          chat_id: loadingMessage.chat.id,
+          message_id: loadingMessage.message_id,
+          parse_mode: 'Markdown',
+        })
+        .catch();
+      await onTextCheckLogCodeAction(bot, chatId, msg, logCode);
+    } catch (err: any) {
+      if (
+        err.name === 'NotFoundException' ||
+        err.message.includes('No MultiFormat Readers')
+      ) {
+        bot.sendMessage(
+          chatId,
+          'សុំរូបភាពច្បាស់បន្តិចមក!!!\n' +
+            '❌ No barcode or QR code detected. Try a clearer or closer photo.'
+        );
+      } else {
+        console.error(err.message);
+        bot.sendMessage(
+          chatId,
+          '⚠️ An error occurred while processing the image.'
+        );
+      }
+    }
+  });
+
   return bot;
 }
