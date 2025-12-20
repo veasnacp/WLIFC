@@ -15,7 +15,7 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 
-const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
+const isDev = IS_DEV;
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
 const ADMIN_LIST = process.env.ADMIN;
 const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
@@ -315,14 +315,6 @@ export async function onTextNumberAction(
   }
   let loadingMsgId;
 
-  const processUpdateWebhook = () => {
-    if (!IS_DEV) {
-      bot.getWebHookInfo().then((info) => {
-        bot.getWebHookInfo();
-      });
-    }
-  };
-
   try {
     const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
       parse_mode: 'Markdown',
@@ -330,7 +322,6 @@ export async function onTextNumberAction(
 
     loadingMsgId = loadingMessage.message_id;
 
-    processUpdateWebhook();
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
@@ -346,13 +337,16 @@ export async function onTextNumberAction(
     };
     let data: DataExpand | undefined;
     let _logCode = logCode;
-    // if (options?.showAllSmallPackage)
-    //   cacheData.keys().find((k) => {
-    //     if (k.includes(logCode)) {
-    //       _logCode = k;
-    //     }
-    //   });
+
     const _data = cacheData.get(_logCode) as typeof data;
+    if (!_data && !isTrackingNumber) {
+      data = cacheData.values().find((d) => {
+        if (d.logcode === logCode) {
+          _logCode = d.logcode;
+        }
+        return d;
+      });
+    }
     let refetchData = true;
     let hasSubLogCodeCache = false;
     if (
@@ -412,8 +406,7 @@ export async function onTextNumberAction(
     let caption: string | undefined;
 
     if (data) {
-      processUpdateWebhook();
-      const _logCode = data.subLogCodes ? data.logcode : logCode;
+      const _logCode = data.logcode;
       if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
         cacheData.set(_logCode, data);
         if (isDev) {
@@ -446,7 +439,7 @@ export async function onTextNumberAction(
           }\n`,
           asMemberContainerController
             ? ''.concat(
-                'លេខទូរកុងតឺន័រ: ',
+                '- ទូរកុងតឺន័រ: ',
                 data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
                 '\n'
               )
@@ -738,7 +731,10 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const chatId = msg.chat.id;
     const cookie = match?.[1]?.trim();
     if (typeof cookie === 'string') {
-      config.set('cookie', cookie);
+      config.set(
+        'cookie',
+        !cookie.startsWith('PHPSESSID=') ? 'PHPSESSID='.concat(cookie) : cookie
+      );
       bot.sendMessage(chatId, 'Successfully set new cookie');
     }
   });

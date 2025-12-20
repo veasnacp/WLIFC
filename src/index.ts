@@ -129,38 +129,23 @@ const app = new Elysia()
     const wl = new WLLogistic(logCode, cookie);
     const data = await wl.getDataFromLogCode();
     let photos = [] as string[];
+    let media = [] as TelegramBot.InputMedia[];
     if (data && 'message' in data) {
       return { message: data.message, errorCode: 1 };
     }
     if (data && typeof data.warehousing_pic === 'string') {
-      photos = wl.getPhotoFromData(data);
+      const mediaData = wl.getMediasFromData(data);
+      photos = mediaData.photos;
+      media = mediaData.medias;
     }
 
     return {
-      message: data ? 'successful' : 'failed',
-      picLinks: photos,
+      message: data && !('message' in data) ? 'successful' : 'failed',
+      logCode,
+      data,
+      media,
+      photos,
       totalPic: photos.length,
-      logCode: logCode,
-      data: !data
-        ? null
-        : ({
-            id: data.id,
-            pid: data.pid,
-            unit_price: data.unit_price,
-            sub_order: data.sub_order,
-            sub_total: data.sub_total,
-            total: data.total,
-            goods_name: data.goods_name,
-            goods_number: data.goods_number,
-            member_name: data.member_name,
-            material: data.material,
-            volume: data.volume,
-            volume_record: data.volume_record,
-            weight: data.weight,
-            expresstracking: data.expresstracking,
-            deliveryway: data.deliveryway,
-            desc: data.desc,
-          } as typeof data),
     };
   })
   .get('/wl/display-image', ({ query, html }) => {
