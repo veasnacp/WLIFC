@@ -3,7 +3,7 @@ import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
 import { chunkArray, removeDuplicateObjArray } from '../utils/is';
-import { PUBLIC_URL } from '../config/constants';
+import { IS_DEV, PUBLIC_URL } from '../config/constants';
 import translate from '@iamtraction/google-translate';
 import { Jimp } from 'jimp';
 import {
@@ -315,6 +315,15 @@ export async function onTextNumberAction(
   }
   let loadingMsgId;
 
+  const processUpdateWebhook = () => {
+    if (!IS_DEV) {
+      bot.processUpdate({
+        update_id: chatId,
+        message: msg,
+      });
+    }
+  };
+
   try {
     const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
       parse_mode: 'Markdown',
@@ -322,6 +331,7 @@ export async function onTextNumberAction(
 
     loadingMsgId = loadingMessage.message_id;
 
+    processUpdateWebhook();
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
       (config.get('cookie') as string) || process.env.WL_COOKIE || '';
@@ -403,6 +413,7 @@ export async function onTextNumberAction(
     let caption: string | undefined;
 
     if (data) {
+      processUpdateWebhook();
       const _logCode = data.subLogCodes ? data.logcode : logCode;
       if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
         cacheData.set(_logCode, data);
@@ -787,9 +798,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const fs = process.getBuiltinModule('fs');
       if (fs && fs.existsSync(fileData)) {
         fs.unlinkSync(fileData);
-        await bot.sendMessage(chatId, '✅ Successfully data reset');
       }
     }
+    await bot.sendMessage(chatId, '✅ Successfully data reset');
   };
   const clearAll = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
