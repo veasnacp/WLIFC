@@ -317,9 +317,8 @@ export async function onTextNumberAction(
 
   const processUpdateWebhook = () => {
     if (!IS_DEV) {
-      bot.processUpdate({
-        update_id: chatId,
-        message: msg,
+      bot.getWebHookInfo().then((info) => {
+        bot.getWebHookInfo();
       });
     }
   };
