@@ -60,9 +60,13 @@ const app = new Elysia()
     }
   })
   // Set webhook endpoint
-  .get('/api/set-webhook', async () => {
-    const WEBHOOK_URL = `${process.env.VERCEL_URL}/webhook`;
+  .get('/api/set-webhook', async ({ query, request }) => {
     try {
+      if (!process.env.ADMIN?.split(',').some((u) => u === query.user)) {
+        throw new Error('Unauthenticated!');
+      }
+      const { protocol, host } = new URL(request.url);
+      const WEBHOOK_URL = `${protocol}//${host}/webhook`;
       await bot.setWebHook(WEBHOOK_URL, { max_connections: 40 });
       return {
         success: true,

@@ -18,6 +18,7 @@ import {
 const isDev = process.env.NODE_ENV && process.env.NODE_ENV === 'development';
 const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
 const ADMIN_LIST = process.env.ADMIN;
+const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
 
 export function isAdmin(msg: TelegramBot.Message) {
   const ADMIN_LIST = config.get('ADMIN_LIST') as string[] | undefined;
@@ -26,12 +27,22 @@ export function isAdmin(msg: TelegramBot.Message) {
     (n) => n === (msg.chat.username || msg.chat.first_name)
   );
 }
-
 export function isMemberAsAdmin(msg: TelegramBot.Message) {
   const WL_MEMBERS_LIST = config.get('WL_MEMBERS_LIST') as string[] | undefined;
   if (!WL_MEMBERS_LIST) return false;
   return WL_MEMBERS_LIST.some(
     (n) => n === (msg.chat.username || msg.chat.first_name)
+  );
+}
+
+export function isMemberAsContainerController(msg: TelegramBot.Message) {
+  const { fullname } = getFullname(msg);
+  const CONTAINER_CONTROLLER_LIST = config.get('CONTAINER_CONTROLLER_LIST') as
+    | string[]
+    | undefined;
+  if (!CONTAINER_CONTROLLER_LIST) return false;
+  return CONTAINER_CONTROLLER_LIST.some(
+    (n) => n === (msg.chat.username || fullname)
   );
 }
 
@@ -68,6 +79,7 @@ type ConfigCache = {
   cookie: string;
   ADMIN_LIST: string[];
   WL_MEMBERS_LIST: string[];
+  CONTAINER_CONTROLLER_LIST: string[];
   bannedUsers: string[];
   status: 'sleep' | 'deactivated' | 'maintenance' | (string & {});
   statusMessage: string;
@@ -83,11 +95,15 @@ type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
 
 const cacheData = new Map<string, DataExpand>(DATA);
 const config = new Map() as MapConfig;
+config.set('ADMIN_LIST', ADMIN_LIST ? ADMIN_LIST.split(',') : []);
 config.set(
   'WL_MEMBERS_LIST',
   WL_MEMBERS_LIST ? WL_MEMBERS_LIST.split(',') : []
 );
-config.set('ADMIN_LIST', ADMIN_LIST ? ADMIN_LIST.split(',') : []);
+config.set(
+  'CONTAINER_CONTROLLER_LIST',
+  CONTAINER_CONTROLLER_LIST ? CONTAINER_CONTROLLER_LIST.split(',') : []
+);
 config.set('bannedUsers', []);
 if (process.env.BOT_STATUS === 'maintenance')
   config.set('status', 'maintenance');
@@ -262,6 +278,7 @@ export async function onTextNumberAction(
   const chatId = msg.chat.id;
   const asAdmin = isAdmin(msg);
   const asAdminMember = isMemberAsAdmin(msg);
+  const asMemberContainerController = isMemberAsContainerController(msg);
   const status = config.get('status');
   const customStatusMessage = config.get('statusMessage');
   if (
@@ -320,12 +337,12 @@ export async function onTextNumberAction(
     };
     let data: DataExpand | undefined;
     let _logCode = logCode;
-    if (options?.showAllSmallPackage)
-      cacheData.keys().find((k) => {
-        if (k.includes(logCode)) {
-          _logCode = k;
-        }
-      });
+    // if (options?.showAllSmallPackage)
+    //   cacheData.keys().find((k) => {
+    //     if (k.includes(logCode)) {
+    //       _logCode = k;
+    //     }
+    //   });
     const _data = cacheData.get(_logCode) as typeof data;
     let refetchData = true;
     let hasSubLogCodeCache = false;
@@ -386,14 +403,18 @@ export async function onTextNumberAction(
     let caption: string | undefined;
 
     if (data) {
-      const _logCode = data.subLogCodes ? data.subLogCodes.join('-') : logCode;
+      const _logCode = data.subLogCodes ? data.logcode : logCode;
       if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
         cacheData.set(_logCode, data);
         if (isDev) {
           const fs = process.getBuiltinModule('fs');
           if (fs) {
-            const DATA = Array.from(cacheData.entries());
-            if (DATA.length)
+            let DATA = Array.from(cacheData.entries());
+            const dataLength = DATA.length;
+            if (dataLength > 50) {
+              DATA = DATA.slice(dataLength - 50, dataLength - 1);
+            }
+            if (dataLength > 0)
               fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
                 encoding: 'utf-8',
               });
@@ -409,7 +430,17 @@ export async function onTextNumberAction(
         .concat(
           `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ ${
             isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
-          }: ${data.container_num?.split('-').slice(1).join('.') || 'N/A'}\n`,
+          }: ${
+            data.container_num?.split('-').slice(1).join('.') ||
+            'N/A(ប្រហែលជើងអាកាស)'
+          }\n`,
+          asMemberContainerController
+            ? ''.concat(
+                'លេខទូរកុងតឺន័រ: ',
+                data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
+                '\n'
+              )
+            : '',
           `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
           `- ចំនួន: ${data.goods_number}\n`,
           isSplitting
@@ -718,6 +749,14 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     key: 'WL_MEMBERS_LIST',
     type: 'remove',
   });
+  onTextConfigUserWithAdminPermission(bot, /\/addCC (.+)/, {
+    key: 'CONTAINER_CONTROLLER_LIST',
+    type: 'add',
+  });
+  onTextConfigUserWithAdminPermission(bot, /\/removeCC (.+)/, {
+    key: 'CONTAINER_CONTROLLER_LIST',
+    type: 'remove',
+  });
   onTextConfigUserWithAdminPermission(bot, /\/addBanUser (.+)/, {
     key: 'bannedUsers',
     type: 'add',
@@ -736,8 +775,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           ([k, v]) =>
             `=== ✅ ${k.toUpperCase()} ✅ ===\n${(v as string[]).join(', ')}`
         )
-        .join('\n\n');
-      await bot.sendMessage(chatId, data.slice(0, MAX_CAPTION_LENGTH)).catch();
+        .join('\n\n')
+        .substring(0, MAX_TEXT_LENGTH);
+      await bot.sendMessage(chatId, data).catch();
     }
   };
   const resetData = async (msg: TelegramBot.Message) => {
@@ -797,6 +837,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                 Array.from(new Map(DATA).values())
                   .map((d) => '/' + Number(d.logcode))
                   .join('\n')
+                  .substring(0, MAX_TEXT_LENGTH)
               );
             }
           } catch {}
@@ -811,7 +852,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       try {
         bot.sendMessage(
           chatId,
-          loggingData.join('\n'),
+          loggingData.join('\n').substring(0, MAX_TEXT_LENGTH),
           sendMessageOptions({ parse_mode: 'HTML' })
         );
       } catch {}
@@ -1036,6 +1077,17 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       new Date().toLocaleString().replace(',', ' |'),
     ].join(' ');
     if (currentDate.day() === new Date().getDate()) {
+      const allLoggingCaches = Array.from(loggingCache.values());
+      if (allLoggingCaches.length > 50) {
+        loggingCache.clear();
+        allLoggingCaches
+          .reverse()
+          .slice(0, 20)
+          .reverse()
+          .forEach((l) => {
+            loggingCache.add(l);
+          });
+      }
       loggingCache.add(logging);
     } else {
       loggingCache.clear();
