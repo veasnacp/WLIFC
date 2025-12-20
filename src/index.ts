@@ -30,200 +30,213 @@ const bot = new TelegramBot(
 );
 runBot(bot, { webAppUrl });
 
-const app = new Elysia()
-  .use(
-    staticPlugin({
-      prefix: '/',
-    })
-  )
-  .use(html())
-  // Health check endpoint
-  .get('/api/health', () => ({
-    status: 'healthy',
-    service: 'Telegram WL Checker Bot',
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-  }))
-  // Webhook info endpoint
-  .get('/api/webhook-info', async () => {
-    try {
-      const info = await bot.getWebHookInfo();
-      return {
-        success: true,
-        info,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  })
-  // Set webhook endpoint
-  .get('/api/set-webhook', async ({ query, request }) => {
-    try {
-      if (!process.env.ADMIN?.split(',').some((u) => u === query.user)) {
-        throw new Error('Unauthenticated!');
-      }
-      const { protocol, host } = new URL(request.url);
-      const WEBHOOK_URL = `${protocol}//${host}/webhook`;
-      await bot.setWebHook(WEBHOOK_URL, { max_connections: 40 });
-      return {
-        success: true,
-        message: `Webhook set to ${WEBHOOK_URL}`,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  })
-  // Delete webhook endpoint
-  .get('/api/delete-webhook', async () => {
-    try {
-      const result = await bot.deleteWebHook();
-      return {
-        success: true,
-        message: 'Webhook deleted',
-        result,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  })
-  .post(
-    'webhook',
-    async ({ body, set }) => {
-      set.status = 200;
+const AppBot = {
+  bot,
+  app: undefined as any,
+};
+
+if (!Bun.env.npm_package_name?.endsWith('-dev')) {
+  const app = new Elysia()
+    .use(
+      staticPlugin({
+        prefix: '/',
+      })
+    )
+    .use(html())
+    // Health check endpoint
+    .get('/api/health', () => ({
+      status: 'healthy',
+      service: 'Telegram WL Checker Bot',
+      timestamp: new Date().toISOString(),
+      environment: NODE_ENV,
+    }))
+    // Webhook info endpoint
+    .get('/api/webhook-info', async () => {
       try {
-        await (bot.processUpdate(
-          body as TelegramBot.Update
-        ) as any as Promise<void>);
-        return { ok: true };
-      } catch (error: any) {
-        console.error('Error processing webhook:', error.message);
+        const info = await bot.getWebHookInfo();
         return {
-          ok: false,
+          success: true,
+          info,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
           error: error.message,
         };
       }
-    },
-    {
-      body: t.Any(),
-    }
-  )
-  .get('/', ({ html }) => {
-    return html('<b>Welcome to WL Checker!!!</b>');
-  })
-  .get('/wl/*', async ({ params }) => {
-    const logCode = params['*'];
-    const isNumeric = isNumber(logCode);
-    if (!isNumeric) {
-      return { message: 'Invalid ID', errorCode: 1 };
-    }
-    const cookie = process.env.WL_COOKIE || '';
-    const wl = new WLLogistic(logCode, cookie);
-    const data = await wl.getDataFromLogCode();
-    let photos = [] as string[];
-    let media = [] as TelegramBot.InputMedia[];
-    if (data && 'message' in data) {
-      return { message: data.message, errorCode: 1 };
-    }
-    if (data && typeof data.warehousing_pic === 'string') {
-      const mediaData = wl.getMediasFromData(data);
-      photos = mediaData.photos;
-      media = mediaData.medias;
-    }
+    })
+    // Set webhook endpoint
+    .get('/api/set-webhook', async ({ query, request }) => {
+      try {
+        if (!process.env.ADMIN?.split(',').some((u) => u === query.user)) {
+          throw new Error('Unauthenticated!');
+        }
+        const { protocol, host } = new URL(request.url);
+        const WEBHOOK_URL = `${protocol}//${host}/webhook`;
+        await bot.setWebHook(WEBHOOK_URL, { max_connections: 40 });
+        return {
+          success: true,
+          message: `Webhook set to ${WEBHOOK_URL}`,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    })
+    // Delete webhook endpoint
+    .get('/api/delete-webhook', async () => {
+      try {
+        const result = await bot.deleteWebHook();
+        return {
+          success: true,
+          message: 'Webhook deleted',
+          result,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    })
+    .post(
+      'webhook',
+      async ({ body, set }) => {
+        set.status = 200;
+        try {
+          await (bot.processUpdate(
+            body as TelegramBot.Update
+          ) as any as Promise<void>);
+          return { ok: true };
+        } catch (error: any) {
+          console.error('Error processing webhook:', error.message);
+          return {
+            ok: false,
+            error: error.message,
+          };
+        }
+      },
+      {
+        body: t.Any(),
+      }
+    )
+    .get('/', ({ html }) => {
+      return html('<b>Welcome to WL Checker!!!</b>');
+    })
+    .get('/wl/*', async ({ params }) => {
+      const logCode = params['*'];
+      const isNumeric = isNumber(logCode);
+      if (!isNumeric) {
+        return { message: 'Invalid ID', errorCode: 1 };
+      }
+      const cookie = process.env.WL_COOKIE || '';
+      const wl = new WLLogistic(logCode, cookie);
+      const data = await wl.getDataFromLogCode();
+      let photos = [] as string[];
+      let media = [] as TelegramBot.InputMedia[];
+      if (data && 'message' in data) {
+        return { message: data.message, errorCode: 1 };
+      }
+      if (data && typeof data.warehousing_pic === 'string') {
+        const mediaData = wl.getMediasFromData(data);
+        photos = mediaData.photos;
+        media = mediaData.medias;
+      }
 
-    return {
-      message: data && !('message' in data) ? 'successful' : 'failed',
-      logCode,
-      data,
-      media,
-      photos,
-      totalPic: photos.length,
-    };
-  })
-  .get('/wl/display-image', ({ query, html }) => {
-    let { image = '', path = '' } = query;
-    if (path.trim().startsWith('http')) {
-      path = path.split('://')[1]?.trim() || '';
-    }
-    path = path.trim() ? `https://${path.trim()}/` : '';
-    const noImage = /*html*/ `<span style="color:blue;font-size:18px;font-weight:bold;">No Image</span>`;
-    let img = noImage;
-    if (image.trim()) {
-      const images = image
-        .trim()
-        .split(',')
-        .filter((v) => Boolean(v.trim()));
-      if (images.length) {
-        img = ''.concat(
-          images
-            .map((p) => {
-              return /*html*/ `<img src="${path.concat(
-                p.trim()
-              )}" width="500" height="500" style="width:100%;height:auto;">`;
-            })
-            .join('\n')
+      return {
+        message: data && !('message' in data) ? 'successful' : 'failed',
+        logCode,
+        data,
+        media,
+        photos,
+        totalPic: photos.length,
+      };
+    })
+    .get('/wl/display-image', ({ query, html }) => {
+      let { image = '', path = '' } = query;
+      if (path.trim().startsWith('http')) {
+        path = path.split('://')[1]?.trim() || '';
+      }
+      path = path.trim() ? `https://${path.trim()}/` : '';
+      const noImage = /*html*/ `<span style="color:blue;font-size:18px;font-weight:bold;">No Image</span>`;
+      let img = noImage;
+      if (image.trim()) {
+        const images = image
+          .trim()
+          .split(',')
+          .filter((v) => Boolean(v.trim()));
+        if (images.length) {
+          img = ''.concat(
+            images
+              .map((p) => {
+                return /*html*/ `<img src="${path.concat(
+                  p.trim()
+                )}" width="500" height="500" style="width:100%;height:auto;">`;
+              })
+              .join('\n')
+          );
+        }
+      }
+
+      return html(
+        /*html*/ `<div style="display:flex;gap:4px;padding:16px;flex-wrap:wrap;align-items:center;justify-content:center;">${img}</div>`
+      );
+    })
+    // Fetch the external image
+    .get('/blob/image', async ({ query, set }) => {
+      const { url } = query;
+      try {
+        if (!url?.trim()) {
+          throw new Error('Image URL is require.');
+        }
+        const response = await fetch(url);
+        if (!response.ok) {
+          set.status = 502;
+          return 'Failed to fetch image from external source.';
+        }
+        const contentType =
+          response.headers.get('content-type') ?? 'image/jpeg';
+        set.headers['Content-Type'] = contentType;
+
+        return response.arrayBuffer();
+      } catch (error) {
+        console.error(
+          'Error serving external image:',
+          (error as Error).message
         );
+        set.status = 500;
+        return 'Internal Server Error';
       }
-    }
-
-    return html(
-      /*html*/ `<div style="display:flex;gap:4px;padding:16px;flex-wrap:wrap;align-items:center;justify-content:center;">${img}</div>`
-    );
-  })
-  // Fetch the external image
-  .get('/blob/image', async ({ query, set }) => {
-    const { url } = query;
-    try {
-      if (!url?.trim()) {
-        throw new Error('Image URL is require.');
+    })
+    // Handle 404
+    .onError(({ code, error }) => {
+      if (code === 'NOT_FOUND') {
+        return {
+          success: false,
+          error: 'Endpoint not found',
+          message: 'Check the API documentation at the root endpoint',
+        };
       }
-      const response = await fetch(url);
-      if (!response.ok) {
-        set.status = 502;
-        return 'Failed to fetch image from external source.';
-      }
-      const contentType = response.headers.get('content-type') ?? 'image/jpeg';
-      set.headers['Content-Type'] = contentType;
-
-      return response.arrayBuffer();
-    } catch (error) {
-      console.error('Error serving external image:', (error as Error).message);
-      set.status = 500;
-      return 'Internal Server Error';
-    }
-  })
-  // Handle 404
-  .onError(({ code, error }) => {
-    if (code === 'NOT_FOUND') {
+      console.error('Unhandled error:', error);
       return {
         success: false,
-        error: 'Endpoint not found',
-        message: 'Check the API documentation at the root endpoint',
+        error: 'Internal server error',
       };
-    }
-    console.error('Unhandled error:', error);
-    return {
-      success: false,
-      error: 'Internal server error',
-    };
-  })
-  .compile();
+    })
+    .compile();
+
+  AppBot.app = app;
+}
 
 // Start server in development
-if (IS_DEV) {
-  const server = app.listen(PORT, () => {
+if (IS_DEV && AppBot.app) {
+  const server = AppBot.app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
 
-export default !IS_DEV ? bot : app;
+export default IS_DEV ? AppBot.app : AppBot.bot;
