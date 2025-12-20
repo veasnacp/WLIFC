@@ -226,4 +226,4 @@ if (IS_DEV) {
   });
 }
 
-export default app;
+export default !IS_DEV ? bot : app;
