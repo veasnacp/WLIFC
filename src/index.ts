@@ -73,6 +73,7 @@ const app = new Elysia({
   serve: {
     idleTimeout: 60,
   },
+  allowUnsafeValidationDetails: true,
 })
   .use(
     staticPlugin({
@@ -206,11 +207,7 @@ const app = new Elysia({
       return { success: true };
     },
     {
-      body: t.Object({
-        initData: t.String(),
-        result: t.String(),
-        logCode: t.Optional(t.String()),
-      }),
+      body: t.Any(),
     }
   )
   .get('/', ({ html }) => {

@@ -54,7 +54,7 @@ window.setUpTelegramWebApp = function () {
                     return [4 /*yield*/, res.json()];
                 case 3:
                     data = _a.sent();
-                    console.log(data);
+                    console.log(data.message);
                     return [4 /*yield*/, fetch('/api/submit-app-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
