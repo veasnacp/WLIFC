@@ -15,9 +15,12 @@ window.setUpTelegramWebApp = async function () {
     const tg = window.Telegram.WebApp;
     tg.expand();
     try {
-      const res = await fetch(path);
+      const res = await fetch(path, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
       const data = await res.json();
-      console.log(data.message);
+      console.log(path, data.message);
       await fetch('/api/submit-app-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

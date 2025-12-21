@@ -48,13 +48,16 @@ window.setUpTelegramWebApp = function () {
                     _a.label = 1;
                 case 1:
                     _a.trys.push([1, 5, , 6]);
-                    return [4 /*yield*/, fetch(path)];
+                    return [4 /*yield*/, fetch(path, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                        })];
                 case 2:
                     res = _a.sent();
                     return [4 /*yield*/, res.json()];
                 case 3:
                     data = _a.sent();
-                    console.log(data.message);
+                    console.log(path, data.message);
                     return [4 /*yield*/, fetch('/api/submit-app-data', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
