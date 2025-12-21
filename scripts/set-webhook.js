@@ -20,7 +20,7 @@ async function setTelegramWebhook() {
     console.log(`Attempting to set webhook to: ${WEBHOOK_URL}`);
 
     try {
-        const response = await fetch(`${PUBLIC_URL}/api/set-webhook`, {
+        const response = await fetch(`${PUBLIC_URL}/api/set-webhook?user=${process.env.ADMIN||''}`, {
             method: 'Get',
             headers: {
                 'Content-Type': 'application/json',
@@ -29,9 +29,9 @@ async function setTelegramWebhook() {
 
         const data = await response.json();
 
-        if (data.ok) {
+        if (data.success) {
             console.log('✅ Telegram Webhook set successfully!');
-            console.log(`Status: ${data.description}`);
+            console.log(`Status: ${data.message}`);
         } else {
             console.error('❌ Failed to set Telegram Webhook.', data.description);
             // Optionally, exit with an error code if failure is critical

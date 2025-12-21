@@ -592,7 +592,7 @@ export async function onTextNumberAction(
     });
 
     loadingMsgId = loadingMessage.message_id;
-    if (loadingMsgId) return;
+    if (!isDev) return;
 
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
