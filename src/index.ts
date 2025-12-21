@@ -2,13 +2,13 @@ import { Elysia, file, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
 import { html } from '@elysiajs/html';
 import crypto from 'crypto';
-import path from 'path';
+
 import { DataExpand, WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
 import {
-  // cacheData,
-  // config,
+  cacheData,
+  config,
   getValidationOptions,
   isMemberAsContainerController,
   runBot,
@@ -226,15 +226,48 @@ const app = new Elysia({
     const showAllSmallPackage = query.showAll === 'true';
     const isSubLogCode =
       isTrackingNumber && !isValidSmallPackageOrTrackingLogCode;
-    const cookie = process.env.WL_COOKIE || '';
+    const cookie = config.get('cookie') || process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
 
     let data: DataExpand | undefined;
     let _logCode = logCode;
 
-    // const _data = cacheData.get(_logCode) as typeof data;
+    const _data = cacheData.get(_logCode) as typeof data;
+    if (!_data && !isTrackingNumber) {
+      data = cacheData.values().find((d) => {
+        if (d.logcode === logCode) {
+          _logCode = d.logcode;
+        }
+        return d;
+      });
+    }
     let refetchData = true;
-    // let hasSubLogCodeCache = false;
+    let hasSubLogCodeCache = false;
+    if (
+      _data &&
+      typeof _data === 'object' &&
+      Object.values(_data).length &&
+      !('message' in _data)
+    ) {
+      refetchData = false;
+      data = _data;
+      if (showAllSmallPackage && !_data.smallPackageGoodsNames) {
+        refetchData = true;
+      }
+    } else if (isSubLogCode) {
+      const _data = [...cacheData.values()].find((d) =>
+        d.sub_logcode?.includes(logCode)
+      );
+      if (_data && !('message' in _data)) {
+        refetchData = false;
+        data = _data;
+        if (showAllSmallPackage && !_data.smallPackageGoodsNames) {
+          refetchData = true;
+        } else {
+          hasSubLogCodeCache = true;
+        }
+      }
+    }
 
     if (refetchData) {
       const wl_data = (await wl.getDataFromLogCode(
