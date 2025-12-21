@@ -7,8 +7,8 @@ import { DataExpand, WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
 import {
-  cacheData,
-  config,
+  // cacheData,
+  // config,
   getValidationOptions,
   isMemberAsContainerController,
   runBot,
@@ -234,7 +234,7 @@ const app = new Elysia({
     const showAllSmallPackage = query.showAll === 'true';
     const isSubLogCode =
       isTrackingNumber && !isValidSmallPackageOrTrackingLogCode;
-    const cookie = config.get('cookie') || process.env.WL_COOKIE || '';
+    const cookie = process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
 
     let data: DataExpand | undefined;
