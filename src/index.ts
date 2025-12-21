@@ -32,14 +32,6 @@ if (!TOKEN || !webAppUrl) {
   );
 }
 
-const publicPath = path.join(process.cwd(), 'public');
-const fs = process.getBuiltinModule('fs');
-if (fs) {
-  const htmlText = fs.readFileSync(path.join(publicPath, 'web-app.html'), {
-    encoding: 'utf-8',
-  });
-}
-
 // Initialize Telegram Bot
 const bot = new TelegramBot(
   TOKEN,

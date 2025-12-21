@@ -578,21 +578,21 @@ export async function onTextNumberAction(
     globalLogCode = logCode;
     const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
       parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: 'Open',
-              web_app: { url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html` },
-            },
-          ],
-        ],
-        resize_keyboard: true,
-      },
+      // reply_markup: {
+      //   inline_keyboard: [
+      //     [
+      //       {
+      //         text: 'Open',
+      //         web_app: { url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html` },
+      //       },
+      //     ],
+      //   ],
+      //   resize_keyboard: true,
+      // },
     });
 
     loadingMsgId = loadingMessage.message_id;
-    if (!isDev) return;
+    // if (!isDev) return;
 
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
