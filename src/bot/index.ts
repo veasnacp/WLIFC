@@ -16,33 +16,29 @@ import {
 } from '@zxing/library';
 
 const isDev = IS_DEV;
-const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
-const ADMIN_LIST = process.env.ADMIN;
-const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
+export const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
+export const ADMIN_LIST = process.env.ADMIN;
+export const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
 
-export function isAdmin(msg: TelegramBot.Message) {
+export function isAdmin(chat: TelegramBot.Chat) {
   const ADMIN_LIST = config.get('ADMIN_LIST') as string[] | undefined;
   if (!ADMIN_LIST) return false;
-  return ADMIN_LIST.some(
-    (n) => n === (msg.chat.username || msg.chat.first_name)
-  );
+  return ADMIN_LIST.some((n) => n === (chat.username || chat.first_name));
 }
-export function isMemberAsAdmin(msg: TelegramBot.Message) {
+export function isMemberAsAdmin(chat: TelegramBot.Chat) {
   const WL_MEMBERS_LIST = config.get('WL_MEMBERS_LIST') as string[] | undefined;
   if (!WL_MEMBERS_LIST) return false;
-  return WL_MEMBERS_LIST.some(
-    (n) => n === (msg.chat.username || msg.chat.first_name)
-  );
+  return WL_MEMBERS_LIST.some((n) => n === (chat.username || chat.first_name));
 }
 
-export function isMemberAsContainerController(msg: TelegramBot.Message) {
-  const { fullname } = getFullname(msg);
+export function isMemberAsContainerController(chat: TelegramBot.Chat) {
+  const { fullname } = getFullname(chat);
   const CONTAINER_CONTROLLER_LIST = config.get('CONTAINER_CONTROLLER_LIST') as
     | string[]
     | undefined;
   if (!CONTAINER_CONTROLLER_LIST) return false;
   return CONTAINER_CONTROLLER_LIST.some(
-    (n) => n === (msg.chat.username || fullname)
+    (n) => n === (chat.username || fullname)
   );
 }
 
@@ -92,8 +88,8 @@ type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
     value: ConfigCache[K]
   ) => MapConfig;
 };
-
-const cacheData = new Map<string, DataExpand>(DATA);
+export const CACHE_DATA = DATA;
+export const cacheData = new Map<string, DataExpand>(CACHE_DATA);
 const config = new Map() as MapConfig;
 config.set('ADMIN_LIST', ADMIN_LIST ? ADMIN_LIST.split(',') : []);
 config.set(
@@ -122,15 +118,15 @@ export const deleteInlineKeyboardButton = {
 export function sendMessageOptions(
   options?: (TelegramBot.SendMessageOptions | TelegramBot.SendPhotoOptions) &
     Partial<{
-      msg: TelegramBot.Message;
+      chat: TelegramBot.Chat;
       inlineKeyboardButtons: TelegramBot.InlineKeyboardButton[];
       translateText: string;
       logCodeForShowMore: string;
     }>
 ) {
-  const { msg, inlineKeyboardButtons, translateText, logCodeForShowMore } =
+  const { chat, inlineKeyboardButtons, translateText, logCodeForShowMore } =
     options || {};
-  const isAsAdmin = msg && isMemberAsAdmin(msg);
+  const isAsAdmin = chat && isMemberAsAdmin(chat);
   let defaultInlineKeyboardButtons = [deleteInlineKeyboardButton];
   if (inlineKeyboardButtons?.length) {
     defaultInlineKeyboardButtons.push(...inlineKeyboardButtons);
@@ -199,10 +195,8 @@ type OnTextNumberActionOptions = {
   isSubLogCode: boolean;
 };
 
-export const getFullname = (msg: TelegramBot.Message) => {
-  const {
-    chat: { first_name, last_name, username },
-  } = msg;
+export const getFullname = (chat: TelegramBot.Chat) => {
+  const { first_name, last_name, username } = chat;
   const fullname =
     (first_name || 'Unknown') + (last_name ? ` ${last_name}` : '');
   const fullnameWithUsername = fullname + (username ? `(${username})` : '');
@@ -269,16 +263,281 @@ export const showMoreDataCaption = async (
   }
 };
 
+let globalLogCode = '';
+
+export function getValidationOptions(
+  logCode: string,
+  bot?: TelegramBot,
+  chatId?: TelegramBot.ChatId
+) {
+  const options = {} as Partial<OnTextNumberActionOptions>;
+  const isValidStartsWith = logCode.startsWith('25');
+  const isOldLogCode = logCode.startsWith('1757');
+  const isValidSmallPackageOrTrackingLogCode = isOldLogCode
+    ? logCode.length === 10
+    : logCode.length >= 12 && logCode.length <= 16;
+  if (
+    !isValidStartsWith ||
+    (isValidStartsWith && logCode.length !== '251209180405'.length)
+  ) {
+    if (!isValidSmallPackageOrTrackingLogCode) {
+      if (bot && chatId) {
+        bot.sendMessage(
+          chatId,
+          'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
+            isOldLogCode
+              ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
+              : '',
+            '❌ Sorry, invalid code. Please try again.'
+          )
+        );
+        return;
+      }
+    } else {
+      options.isSubLogCode = true;
+    }
+  }
+
+  return options;
+}
+export async function ShowDataMessageAndPhotos(
+  bot: TelegramBot,
+  chat: TelegramBot.Chat,
+  data: DataExpand | undefined,
+  wl: WLLogistic,
+  options: {
+    logCode: string;
+    isTrackingNumber: boolean;
+    asMemberContainerController: boolean;
+    hasSubLogCodeCache?: boolean;
+    loadingMsgId?: number;
+    withMore?: boolean;
+  }
+) {
+  const {
+    logCode,
+    isTrackingNumber,
+    hasSubLogCodeCache,
+    asMemberContainerController,
+    loadingMsgId,
+  } = options;
+  const chatId = chat.id;
+  let photos = [] as string[];
+  let media = [] as TelegramBot.InputMedia[];
+  if (data && typeof data.warehousing_pic === 'string') {
+    const mediaData = wl.getMediasFromData(data);
+    photos = mediaData.photos;
+    media = mediaData.medias;
+  }
+  let textMessage: string | undefined;
+  let caption: string | undefined;
+
+  if (data) {
+    const _logCode = data.logcode;
+    if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
+      cacheData.set(_logCode, data);
+      if (isDev) {
+        const fs = process.getBuiltinModule('fs');
+        if (fs) {
+          let DATA = Array.from(cacheData.entries());
+          const dataLength = DATA.length;
+          if (dataLength > 50) {
+            DATA = DATA.slice(dataLength - 50, dataLength - 1);
+          }
+          if (dataLength > 0)
+            fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
+              encoding: 'utf-8',
+            });
+        }
+      }
+    }
+    const goods_numbers =
+      'goods_numbers' in data &&
+      Array.isArray(data.goods_numbers) &&
+      data.goods_numbers;
+    const isSplitting = goods_numbers && goods_numbers.length > 1;
+    textMessage = ''
+      .concat(
+        `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ ${
+          isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
+        }: ${
+          data.container_num?.split('-').slice(1).join('.') ||
+          'N/A(ប្រហែលជើងអាកាស)'
+        }\n`,
+        asMemberContainerController
+          ? ''.concat(
+              '- ទូរកុងតឺន័រ: ',
+              data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
+              '\n'
+            )
+          : '',
+        `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
+        `- ចំនួន: ${data.goods_number}\n`,
+        isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
+        `- ទម្ងន់: ${data.weight}kg\n`,
+        `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
+        `- ម៉ែត្រគូបផ្សេងគ្នា: ${
+          data.volume_record?.trim()
+            ? ''.concat(
+                '[\n',
+                data.volume_record
+                  .split('<br>')
+                  .filter(Boolean)
+                  .map((v) => {
+                    const total = v
+                      .split('x')
+                      .reduce((acc, p) => acc * Number(p), 1);
+                    return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
+                  })
+                  .join('\n'),
+                '\n\t\t\t]'
+              )
+            : 'N/A'
+        }\n`,
+        `- ទំនិញ: ${data.goods_name}${
+          data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
+        }\n`,
+        `- ផ្សេងៗ: ${data.desc}\n`
+      )
+      .substring(0, MAX_TEXT_LENGTH);
+    caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
+  }
+
+  const showMoreCaption = () =>
+    options?.withMore && showMoreDataCaption(bot, chatId, data);
+
+  if (textMessage && photos.length === 0) {
+    await bot.sendMessage(
+      chatId,
+      `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${textMessage}`,
+      sendMessageOptions()
+    );
+    if (data?.smallPackageGoodsNames?.length && data.subLogCodes) {
+      await bot.sendMessage(
+        chatId,
+        '=== អីវ៉ាន់តូចៗទាំងអស់ ===\n'.concat(
+          data.smallPackageGoodsNames.join('\n')
+        ),
+        sendMessageOptions()
+      );
+    }
+
+    await showMoreCaption();
+    // Delete the temporary loading message
+    if (loadingMsgId) await bot.deleteMessage(chatId, loadingMsgId);
+    return;
+  }
+
+  let errorMessageId: number | undefined;
+  // Send the final generated photo
+  let isError = false;
+  if (photos.length === 1) {
+    const sendPhoto = async (photo: string | Buffer) => {
+      await bot
+        .sendPhoto(
+          chatId,
+          photo,
+          sendMessageOptions({
+            caption,
+            translateText: logCode,
+            logCodeForShowMore: logCode,
+          })
+        )
+        .then(async () => {
+          console.log(`Successfully sent an photo.`);
+          await showMoreCaption();
+        })
+        .catch(async (error) => {
+          isError = true;
+          console.error('Error sending photo:', (error as Error).message);
+          const { message_id } = await bot.sendMessage(
+            chatId,
+            '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
+          );
+          errorMessageId = message_id;
+        });
+    };
+    await sendPhoto(photos[0]);
+    if (isError) {
+      const tryLoadingMessage = await bot.sendMessage(
+        chatId,
+        '⏳ Trying load image...'
+      );
+      await sendPhoto(`${PUBLIC_URL}/blob/image?url=${photos[0]}`);
+      if (errorMessageId) {
+        await bot.deleteMessage(chatId, errorMessageId).catch();
+        bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
+      }
+    }
+  } else {
+    const medias = chunkArray(media, 10);
+    const sendMediaGroup = async (medias: TelegramBot.InputMedia[][]) => {
+      isError = false;
+      for (let i = 0; i < medias.length; i++) {
+        await bot
+          .sendMediaGroup(chatId, medias[i])
+          .then(async (sentMessages) => {
+            console.log(
+              `Successfully sent an album with ${sentMessages.length} items.`
+            );
+          })
+          .catch(async (error) => {
+            isError = true;
+            console.error(
+              'Error sending media group:',
+              (error as Error).message
+            );
+            const { message_id } = await bot.sendMessage(
+              chatId,
+              '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
+            );
+            errorMessageId = message_id;
+          });
+      }
+    };
+    await sendMediaGroup(medias);
+    if (isError) {
+      const tryLoadingMessage = await bot.sendMessage(
+        chatId,
+        '⏳ Trying load image...'
+      );
+      const medias = chunkArray(
+        media.map((m) => ({
+          ...m,
+          media: `${PUBLIC_URL}/blob/image?url=${m.media}`,
+        })),
+        10
+      );
+      await sendMediaGroup(medias);
+      if (errorMessageId) {
+        await bot.deleteMessage(chatId, errorMessageId).catch();
+        await bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
+      }
+    }
+    if (caption) {
+      await bot.sendMessage(
+        chatId,
+        caption,
+        sendMessageOptions({
+          translateText: logCode,
+          logCodeForShowMore: logCode,
+          chat,
+        })
+      );
+    }
+    await showMoreCaption();
+  }
+}
 export async function onTextNumberAction(
   bot: TelegramBot,
-  msg: TelegramBot.Message,
+  chat: TelegramBot.Chat,
   logCode: string | undefined,
   options?: Partial<OnTextNumberActionOptions>
 ) {
-  const chatId = msg.chat.id;
-  const asAdmin = isAdmin(msg);
-  const asAdminMember = isMemberAsAdmin(msg);
-  const asMemberContainerController = isMemberAsContainerController(msg);
+  const chatId = chat.id;
+  const asAdmin = isAdmin(chat);
+  const asAdminMember = isMemberAsAdmin(chat);
+  const asMemberContainerController = isMemberAsContainerController(chat);
   const status = config.get('status');
   const customStatusMessage = config.get('statusMessage');
   if (
@@ -302,7 +561,7 @@ export async function onTextNumberAction(
   if (
     config
       .get('bannedUsers')
-      ?.some((u) => u === (msg.chat.username || msg.chat.first_name))
+      ?.some((u) => u === (chat.username || chat.first_name))
   ) {
     bot.sendMessage(
       chatId,
@@ -316,11 +575,24 @@ export async function onTextNumberAction(
   let loadingMsgId;
 
   try {
+    globalLogCode = logCode;
     const loadingMessage = await bot.sendMessage(chatId, LOADING_TEXT, {
       parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'Open',
+              web_app: { url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html` },
+            },
+          ],
+        ],
+        resize_keyboard: true,
+      },
     });
 
     loadingMsgId = loadingMessage.message_id;
+    if (loadingMsgId) return;
 
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
@@ -395,213 +667,14 @@ export async function onTextNumberAction(
         data = wl_data;
       }
     }
-    let photos = [] as string[];
-    let media = [] as TelegramBot.InputMedia[];
-    if (data && typeof data.warehousing_pic === 'string') {
-      const mediaData = wl.getMediasFromData(data);
-      photos = mediaData.photos;
-      media = mediaData.medias;
-    }
-    let textMessage: string | undefined;
-    let caption: string | undefined;
-
-    if (data) {
-      const _logCode = data.logcode;
-      if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
-        cacheData.set(_logCode, data);
-        if (isDev) {
-          const fs = process.getBuiltinModule('fs');
-          if (fs) {
-            let DATA = Array.from(cacheData.entries());
-            const dataLength = DATA.length;
-            if (dataLength > 50) {
-              DATA = DATA.slice(dataLength - 50, dataLength - 1);
-            }
-            if (dataLength > 0)
-              fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
-                encoding: 'utf-8',
-              });
-          }
-        }
-      }
-      const goods_numbers =
-        'goods_numbers' in data &&
-        Array.isArray(data.goods_numbers) &&
-        data.goods_numbers;
-      const isSplitting = goods_numbers && goods_numbers.length > 1;
-      textMessage = ''
-        .concat(
-          `- លេខបុង: ${isTrackingNumber ? data.logcode : logCode} ✅ ${
-            isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
-          }: ${
-            data.container_num?.split('-').slice(1).join('.') ||
-            'N/A(ប្រហែលជើងអាកាស)'
-          }\n`,
-          asMemberContainerController
-            ? ''.concat(
-                '- ទូរកុងតឺន័រ: ',
-                data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
-                '\n'
-              )
-            : '',
-          `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
-          `- ចំនួន: ${data.goods_number}\n`,
-          isSplitting
-            ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n`
-            : '',
-          `- ទម្ងន់: ${data.weight}kg\n`,
-          `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
-          `- ម៉ែត្រគូបផ្សេងគ្នា: ${
-            data.volume_record?.trim()
-              ? ''.concat(
-                  '[\n',
-                  data.volume_record
-                    .split('<br>')
-                    .filter(Boolean)
-                    .map((v) => {
-                      const total = v
-                        .split('x')
-                        .reduce((acc, p) => acc * Number(p), 1);
-                      return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
-                    })
-                    .join('\n'),
-                  '\n\t\t\t]'
-                )
-              : 'N/A'
-          }\n`,
-          `- ទំនិញ: ${data.goods_name}${
-            data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
-          }\n`,
-          `- ផ្សេងៗ: ${data.desc}\n`
-        )
-        .substring(0, MAX_TEXT_LENGTH);
-      caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
-    }
-
-    const showMoreCaption = () =>
-      options?.withMore && showMoreDataCaption(bot, chatId, data);
-
-    if (textMessage && photos.length === 0) {
-      await bot.sendMessage(
-        chatId,
-        `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${textMessage}`,
-        sendMessageOptions()
-      );
-      if (data?.smallPackageGoodsNames?.length && data.subLogCodes) {
-        await bot.sendMessage(
-          chatId,
-          '=== អីវ៉ាន់តូចៗទាំងអស់ ===\n'.concat(
-            data.smallPackageGoodsNames.join('\n')
-          ),
-          sendMessageOptions()
-        );
-      }
-
-      await showMoreCaption();
-      // Delete the temporary loading message
-      await bot.deleteMessage(chatId, loadingMsgId);
-      return;
-    }
-
-    let errorMessageId: number | undefined;
-    // Send the final generated photo
-    let isError = false;
-    if (photos.length === 1) {
-      const sendPhoto = async (photo: string | Buffer) => {
-        await bot
-          .sendPhoto(
-            chatId,
-            photo,
-            sendMessageOptions({
-              caption,
-              translateText: logCode,
-              logCodeForShowMore: logCode,
-            })
-          )
-          .then(async () => {
-            console.log(`Successfully sent an photo.`);
-            await showMoreCaption();
-          })
-          .catch(async (error) => {
-            isError = true;
-            console.error('Error sending photo:', (error as Error).message);
-            const { message_id } = await bot.sendMessage(
-              chatId,
-              '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
-            );
-            errorMessageId = message_id;
-          });
-      };
-      await sendPhoto(photos[0]);
-      if (isError) {
-        const tryLoadingMessage = await bot.sendMessage(
-          chatId,
-          '⏳ Trying load image...'
-        );
-        await sendPhoto(`${PUBLIC_URL}/blob/image?url=${photos[0]}`);
-        if (errorMessageId) {
-          await bot.deleteMessage(chatId, errorMessageId).catch();
-          bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
-        }
-      }
-    } else {
-      const medias = chunkArray(media, 10);
-      const sendMediaGroup = async (medias: TelegramBot.InputMedia[][]) => {
-        isError = false;
-        for (let i = 0; i < medias.length; i++) {
-          await bot
-            .sendMediaGroup(chatId, medias[i])
-            .then(async (sentMessages) => {
-              console.log(
-                `Successfully sent an album with ${sentMessages.length} items.`
-              );
-            })
-            .catch(async (error) => {
-              isError = true;
-              console.error(
-                'Error sending media group:',
-                (error as Error).message
-              );
-              const { message_id } = await bot.sendMessage(
-                chatId,
-                '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
-              );
-              errorMessageId = message_id;
-            });
-        }
-      };
-      await sendMediaGroup(medias);
-      if (isError) {
-        const tryLoadingMessage = await bot.sendMessage(
-          chatId,
-          '⏳ Trying load image...'
-        );
-        const medias = chunkArray(
-          media.map((m) => ({
-            ...m,
-            media: `${PUBLIC_URL}/blob/image?url=${m.media}`,
-          })),
-          10
-        );
-        await sendMediaGroup(medias);
-        if (errorMessageId) {
-          await bot.deleteMessage(chatId, errorMessageId).catch();
-          await bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
-        }
-      }
-      if (caption) {
-        await bot.sendMessage(
-          chatId,
-          caption,
-          sendMessageOptions({
-            translateText: logCode,
-            logCodeForShowMore: logCode,
-            msg,
-          })
-        );
-      }
-      await showMoreCaption();
-    }
+    await ShowDataMessageAndPhotos(bot, chat, data, wl, {
+      logCode,
+      isTrackingNumber,
+      hasSubLogCodeCache,
+      asMemberContainerController,
+      loadingMsgId,
+      withMore: options?.withMore,
+    });
     await bot.deleteMessage(chatId, loadingMsgId);
   } catch (error) {
     console.error(
@@ -643,7 +716,7 @@ export const configUserWithAdminPermission = async (
   const username_or_first_name = options.username_or_first_name
     ?.trim()
     .substring(0, 20);
-  if (isAdmin(msg)) {
+  if (isAdmin(msg.chat)) {
     const members = (config.get(options.key) as string[]) || [];
     if (username_or_first_name) {
       const hasMember = members.includes(username_or_first_name);
@@ -774,7 +847,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
 
   const getConfigUsers = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
-    if (isAdmin(msg)) {
+    if (isAdmin(msg.chat)) {
       const data = Array.from(config.entries())
         .filter(([_, v]) => Array.isArray(v))
         .map(
@@ -868,7 +941,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/(\/showButtons|\/btn)/, (msg) => {
     const chatId = msg.chat.id;
 
-    if (isAdmin(msg))
+    if (isAdmin(msg.chat))
       bot
         .sendMessage(chatId, 'All Buttons for admin', {
           reply_markup: {
@@ -890,12 +963,12 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/setStatus (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const [text, ...other] = match?.[1].split('|') || [];
-    if (isAdmin(msg)) {
+    if (isAdmin(msg.chat)) {
       const customStatusMessage = other?.join('|');
       if (customStatusMessage) {
         config.set('statusMessage', customStatusMessage);
       }
-      if (text === 'sleep') config.set('status', text);
+      config.set('status', text);
       bot
         .sendMessage(
           chatId,
@@ -911,7 +984,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const chatId = msg?.chat.id;
     try {
       if (chatId) {
-        const { fullname, fullnameWithUsername } = getFullname(msg);
+        const { fullname, fullnameWithUsername } = getFullname(msg.chat);
         if (action === 'delete') {
           try {
             bot.deleteMessage(chatId, msg.message_id);
@@ -1006,7 +1079,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         )
       );
     } else {
-      await onTextNumberAction(bot, msg, logCode, {
+      await onTextNumberAction(bot, msg.chat, logCode, {
         showAllSmallPackage,
         isSubLogCode: true,
       });
@@ -1039,32 +1112,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       return;
     }
     const logCode = msg.text?.trim() || '';
-    const options = {} as Partial<OnTextNumberActionOptions>;
-    const isValidStartsWith = logCode.startsWith('25');
-    const isOldLogCode = logCode.startsWith('1757');
-    const isValidSmallPackageOrTrackingLogCode = isOldLogCode
-      ? logCode.length === 10
-      : logCode.length >= 12 && logCode.length <= 16;
-    if (
-      !isValidStartsWith ||
-      (isValidStartsWith && logCode.length !== '251209180405'.length)
-    ) {
-      if (!isValidSmallPackageOrTrackingLogCode) {
-        bot.sendMessage(
-          msg.chat.id,
-          'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
-            isOldLogCode
-              ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
-              : '',
-            '❌ Sorry, invalid code. Please try again.'
-          )
-        );
-        return;
-      } else {
-        options.isSubLogCode = true;
-      }
-    }
-    await onTextNumberAction(bot, msg, logCode, options);
+    const options = getValidationOptions(logCode, bot, msg.chat.id);
+    await onTextNumberAction(bot, msg.chat, logCode, options);
   });
 
   // Listen for data sent back from the Mini App (via tg.sendData)
@@ -1072,7 +1121,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const {
       chat: { id: chatId, first_name, last_name, username },
     } = msg;
-    const { fullname, fullnameWithUsername } = getFullname(msg);
+    const { fullname, fullnameWithUsername } = getFullname(msg.chat);
     const text = msg.text?.trim() || '';
     const logging = [
       'message',
@@ -1100,8 +1149,8 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
     console.log(logging);
 
-    const asAdmin = isAdmin(msg);
-    const asAdminMember = isMemberAsAdmin(msg);
+    const asAdmin = isAdmin(msg.chat);
+    const asAdminMember = isMemberAsAdmin(msg.chat);
     if (
       [
         '/add',
@@ -1139,7 +1188,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const t = text.slice(1);
       const isNumeric = integerRegExp.test(t);
       if (isNumeric) {
-        await onTextNumberAction(bot, msg, t);
+        await onTextNumberAction(bot, msg.chat, t);
       }
     }
   });
@@ -1212,5 +1261,35 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
   });
 
+  bot.on('web_app_data', (msg) => {
+    const {
+      chat: { id: chatId },
+      web_app_data,
+    } = msg;
+    const data = web_app_data?.data;
+
+    console.log('msg', msg.chat);
+    console.log('web_app_data', data);
+
+    if (data)
+      try {
+        const parsedData = JSON.parse(data);
+
+        bot.sendMessage(
+          chatId,
+          `✅ **Data received from Web App:**\n\n` +
+            `**Name:** ${parsedData.name}\n` +
+            `**Result:** ${parsedData.result}`,
+          {
+            parse_mode: 'Markdown',
+          }
+        );
+      } catch (e) {
+        bot.sendMessage(chatId, `Raw data received: ${data}`);
+      }
+  });
+
   return bot;
 }
+
+export { config };

@@ -15,23 +15,16 @@ if (!BOT_TOKEN || !VERCEL_PUBLIC_URL) {
     process.exit(0);
 }
 
-const telegramApiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`;
 
 async function setTelegramWebhook() {
     console.log(`Attempting to set webhook to: ${WEBHOOK_URL}`);
 
     try {
-        const response = await fetch(telegramApiUrl, {
-            method: 'POST',
+        const response = await fetch(`${PUBLIC_URL}/api/set-webhook`, {
+            method: 'Get',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                url: WEBHOOK_URL,
-                // Optional: set a maximum number of concurrent updates
-                max_connections: 40,
-                // drop_pending_updates: true
-            }),
         });
 
         const data = await response.json();
@@ -39,11 +32,6 @@ async function setTelegramWebhook() {
         if (data.ok) {
             console.log('✅ Telegram Webhook set successfully!');
             console.log(`Status: ${data.description}`);
-            if(process.env.NODE_ENV === 'development'){
-                const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
-                const data = await res.json();
-                console.log(data)
-            }
         } else {
             console.error('❌ Failed to set Telegram Webhook.', data.description);
             // Optionally, exit with an error code if failure is critical

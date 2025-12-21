@@ -18,9 +18,9 @@ export class WLLogistic {
   private _cookie: string = '';
   asAdminMember = false;
   headers: HeadersInit = {};
-  constructor(logCode: string, cookie: string) {
-    this._currentLogCode = logCode;
-    this._cookie = cookie;
+  constructor(logCode?: string, cookie?: string) {
+    this._currentLogCode = logCode || '';
+    this._cookie = cookie || '';
     this.headers = {
       accept: 'application/json, text/javascript, */*; q=0.01',
       'accept-language': 'en-US,en;q=0.9,km;q=0.8',

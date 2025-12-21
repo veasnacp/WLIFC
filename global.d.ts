@@ -6,5 +6,6 @@ declare global {
     Telegram: {
       WebApp: WebApp; // WebApp is the main interface provided by @types/telegram-web-app
     };
+    setUpTelegramWebApp: VoidFunction;
   }
 }
