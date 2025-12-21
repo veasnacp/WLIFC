@@ -77,6 +77,7 @@ const app = new Elysia({
   .use(
     staticPlugin({
       prefix: '/',
+      alwaysStatic: true,
     })
   )
   .use(html())
