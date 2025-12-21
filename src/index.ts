@@ -240,42 +240,9 @@ const app = new Elysia({
     let data: DataExpand | undefined;
     let _logCode = logCode;
 
-    const _data = cacheData.get(_logCode) as typeof data;
-    if (!_data && !isTrackingNumber) {
-      data = cacheData.values().find((d) => {
-        if (d.logcode === logCode) {
-          _logCode = d.logcode;
-        }
-        return d;
-      });
-    }
+    // const _data = cacheData.get(_logCode) as typeof data;
     let refetchData = true;
-    let hasSubLogCodeCache = false;
-    if (
-      _data &&
-      typeof _data === 'object' &&
-      Object.values(_data).length &&
-      !('message' in _data)
-    ) {
-      refetchData = false;
-      data = _data;
-      if (showAllSmallPackage && !_data.smallPackageGoodsNames) {
-        refetchData = true;
-      }
-    } else if (isSubLogCode) {
-      const _data = [...cacheData.values()].find((d) =>
-        d.sub_logcode?.includes(logCode)
-      );
-      if (_data && !('message' in _data)) {
-        refetchData = false;
-        data = _data;
-        if (showAllSmallPackage && !_data.smallPackageGoodsNames) {
-          refetchData = true;
-        } else {
-          hasSubLogCodeCache = true;
-        }
-      }
-    }
+    // let hasSubLogCodeCache = false;
 
     if (refetchData) {
       const wl_data = (await wl.getDataFromLogCode(
