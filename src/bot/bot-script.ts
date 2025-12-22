@@ -13,7 +13,6 @@ window.setUpTelegramWebApp = async function () {
   const path = window.location.pathname;
   if (path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp) {
     const tg = window.Telegram.WebApp;
-    tg.expand();
     try {
       const res = await fetch(path, {
         method: 'GET',

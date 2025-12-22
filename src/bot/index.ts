@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { chunkArray, removeDuplicateObjArray } from '../utils/is';
+import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
 import { IS_DEV, PUBLIC_URL } from '../config/constants';
 import translate from '@iamtraction/google-translate';
 import { Jimp } from 'jimp';
@@ -14,8 +14,8 @@ import {
   MultiFormatReader,
   RGBLuminanceSource,
 } from '@zxing/library';
+import chalk from 'chalk';
 
-const isDev = IS_DEV;
 export const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
 export const ADMIN_LIST = process.env.ADMIN;
 export const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
@@ -23,12 +23,21 @@ export const CONTAINER_CONTROLLER_LIST = process.env.CONTAINER_CONTROLLER;
 export function isAdmin(chat: TelegramBot.Chat) {
   const ADMIN_LIST = config.get('ADMIN_LIST') as string[] | undefined;
   if (!ADMIN_LIST) return false;
-  return ADMIN_LIST.some((n) => n === (chat.username || chat.first_name));
+  return ADMIN_LIST.some((n) =>
+    isNumber(n)
+      ? n === String(chat.id)
+      : n === (chat.username || chat.first_name)
+  );
 }
+
 export function isMemberAsAdmin(chat: TelegramBot.Chat) {
   const WL_MEMBERS_LIST = config.get('WL_MEMBERS_LIST') as string[] | undefined;
   if (!WL_MEMBERS_LIST) return false;
-  return WL_MEMBERS_LIST.some((n) => n === (chat.username || chat.first_name));
+  return WL_MEMBERS_LIST.some((n) =>
+    isNumber(n)
+      ? n === String(chat.id)
+      : n === (chat.username || chat.first_name)
+  );
 }
 
 export function isMemberAsContainerController(chat: TelegramBot.Chat) {
@@ -37,8 +46,8 @@ export function isMemberAsContainerController(chat: TelegramBot.Chat) {
     | string[]
     | undefined;
   if (!CONTAINER_CONTROLLER_LIST) return false;
-  return CONTAINER_CONTROLLER_LIST.some(
-    (n) => n === (chat.username || fullname)
+  return CONTAINER_CONTROLLER_LIST.some((n) =>
+    isNumber(n) ? n === String(chat.id) : n === (chat.username || fullname)
   );
 }
 
@@ -61,7 +70,7 @@ const publicPath = path.join(process.cwd(), 'public');
 const currentFileName = `data-${currentDate.month()}-${currentDate.day()}.json`;
 const fileData = path.join(publicPath, currentFileName);
 const fs = process.getBuiltinModule('fs');
-if (isDev) {
+if (IS_DEV) {
   if (fs && fs.existsSync(fileData)) {
     const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
     if (dataString.startsWith('[') && dataString.endsWith(']')) {
@@ -103,6 +112,13 @@ config.set(
 config.set('bannedUsers', []);
 if (process.env.BOT_STATUS === 'maintenance')
   config.set('status', 'maintenance');
+
+interface ActiveUserData {
+  fullnameWithUsername: string;
+  username?: string;
+  firstSeen: Date;
+}
+export const activeUserMap = new Map<number, ActiveUserData>();
 
 const loggingCache = new Set<string>();
 
@@ -153,16 +169,20 @@ export function sendMessageOptions(
 
 export const adminInlineKeyboardButtons = [
   {
-    text: 'Show LogCodes',
+    text: 'LogCodes',
     callback_data: 'getLogCodes',
   },
   {
-    text: 'Show Logging',
+    text: 'Logging',
     callback_data: 'getLogging',
   },
   {
-    text: 'Show Config Users',
+    text: 'Config Users',
     callback_data: 'getConfigUsers',
+  },
+  {
+    text: 'Active Users',
+    callback_data: 'getActiveUsers',
   },
   {
     text: 'Reset Data',
@@ -198,8 +218,8 @@ type OnTextNumberActionOptions = {
 export const getFullname = (chat: TelegramBot.Chat) => {
   const { first_name, last_name, username } = chat;
   const fullname =
-    (first_name || 'Unknown') + (last_name ? ` ${last_name}` : '');
-  const fullnameWithUsername = fullname + (username ? `(${username})` : '');
+    (first_name || '') + (last_name ? ` ${last_name}` : '') || 'Anonymous';
+  const fullnameWithUsername = fullname + (username ? `(@${username})` : '');
   return { fullname, fullnameWithUsername };
 };
 
@@ -336,7 +356,7 @@ export async function ShowDataMessageAndPhotos(
     const _logCode = data.logcode;
     if (!hasSubLogCodeCache && !cacheData.get(_logCode)) {
       cacheData.set(_logCode, data);
-      if (isDev) {
+      if (IS_DEV) {
         const fs = process.getBuiltinModule('fs');
         if (fs) {
           let DATA = Array.from(cacheData.entries());
@@ -444,7 +464,7 @@ export async function ShowDataMessageAndPhotos(
           })
         )
         .then(async () => {
-          console.log(`Successfully sent an photo.`);
+          console.log(`✅ Successfully sent an photo.`);
           await showMoreCaption();
         })
         .catch(async (error) => {
@@ -478,7 +498,7 @@ export async function ShowDataMessageAndPhotos(
           .sendMediaGroup(chatId, medias[i])
           .then(async (sentMessages) => {
             console.log(
-              `Successfully sent an album with ${sentMessages.length} items.`
+              `✅ Successfully sent an album with ${sentMessages.length} items.`
             );
           })
           .catch(async (error) => {
@@ -578,10 +598,10 @@ export async function onTextNumberAction(
     globalLogCode = logCode;
     const loadingMessage = await bot.sendMessage(
       chatId,
-      isDev ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
+      IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
       {
         parse_mode: 'Markdown',
-        reply_markup: isDev
+        reply_markup: IS_DEV
           ? undefined
           : {
               inline_keyboard: [
@@ -600,7 +620,7 @@ export async function onTextNumberAction(
     );
 
     loadingMsgId = loadingMessage.message_id;
-    if (!isDev) return;
+    if (!IS_DEV) return;
 
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
@@ -796,9 +816,44 @@ export const onTextConfigUserWithAdminPermission = (
   });
 };
 
+export const alertNoPermissionMessage = async (
+  bot: TelegramBot,
+  chatId: TelegramBot.ChatId,
+  fullname: string
+) => {
+  return bot.sendMessage(
+    chatId,
+    `Hey, <b>${fullname}</b>!\n⚠️ You don't have permission this use this action.`,
+    { parse_mode: 'HTML' }
+  );
+};
+
 const integerRegExp = /^\d+$/;
 
 export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
+  const commandsAdmin = [
+    { command: 'start', description: 'Start the bot' },
+    { command: 'settings', description: 'Show all button actions' },
+    { command: 'setCookie', description: 'Set new cookie' },
+  ];
+  bot.onText(/\/menu (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const text = match?.[1].trim().toLowerCase();
+    if (isAdmin(msg.chat))
+      bot
+        .setMyCommands(
+          ['off', 'hidden', 'disable'].some((t) => t === text)
+            ? []
+            : commandsAdmin
+        )
+        .then(() => {
+          console.log('Command menu updated successfully');
+        });
+    else {
+      const { fullname } = getFullname(msg.chat);
+      alertNoPermissionMessage(bot, chatId, fullname);
+    }
+  });
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
 
@@ -816,7 +871,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         'cookie',
         !cookie.startsWith('PHPSESSID=') ? 'PHPSESSID='.concat(cookie) : cookie
       );
-      bot.sendMessage(chatId, 'Successfully set new cookie');
+      bot.sendMessage(chatId, '✅ Successfully set new cookie');
     }
   });
 
@@ -867,10 +922,24 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       await bot.sendMessage(chatId, data).catch();
     }
   };
+  const getActiveUsers = async (msg: TelegramBot.Message) => {
+    const chatId = msg.chat.id;
+    if (isAdmin(msg.chat)) {
+      const data = Array.from(activeUserMap.entries());
+      let message = 'no active user';
+      if (data.length) {
+        message = data
+          .map(([id, u]) => `${id}|${u.fullnameWithUsername}`)
+          .join('\n')
+          .substring(0, MAX_TEXT_LENGTH);
+      }
+      await bot.sendMessage(chatId, message).catch();
+    }
+  };
   const resetData = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     cacheData.clear();
-    if (isDev) {
+    if (IS_DEV) {
       const fs = process.getBuiltinModule('fs');
       if (fs && fs.existsSync(fileData)) {
         fs.unlinkSync(fileData);
@@ -883,7 +952,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     try {
       let isError = false;
       let message = '✅ Done!!!';
-      if (fs && !isDev) {
+      if (fs && IS_DEV) {
         const files = fs.readdirSync(publicPath);
         const filesToDelete = files.filter((file) => {
           const isException = file === currentFileName;
@@ -911,26 +980,21 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   };
   const getLogCodes = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
-    if (isDev) {
-      const fs = process.getBuiltinModule('fs');
-      if (fs && fs.existsSync(fileData)) {
-        const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
-        if (dataString.startsWith('[') && dataString.endsWith(']')) {
-          try {
-            DATA = JSON.parse(dataString);
-            if (DATA) {
-              bot.sendMessage(
-                chatId,
-                Array.from(new Map(DATA).values())
-                  .map((d) => '/' + Number(d.logcode))
-                  .join('\n')
-                  .substring(0, MAX_TEXT_LENGTH)
-              );
-            }
-          } catch {}
-        }
-      }
-    }
+    const data = Array.from(cacheData.values());
+    bot.sendMessage(
+      chatId,
+      data.length
+        ? data
+            .map(
+              (d) =>
+                `/${Number(d.logcode)} (${d.mark_name} - P:${
+                  d.warehousing_pic.split(',').filter(Boolean).length
+                })`
+            )
+            .join('\n')
+            .substring(0, MAX_TEXT_LENGTH)
+        : 'No LogCodes'
+    );
   };
   const getLogging = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
@@ -946,7 +1010,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     }
   };
 
-  bot.onText(/(\/showButtons|\/btn)/, (msg) => {
+  bot.onText(/(\/settings|\/stg)/, (msg) => {
     const chatId = msg.chat.id;
 
     if (isAdmin(msg.chat))
@@ -955,9 +1019,10 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           reply_markup: {
             inline_keyboard: [
               [...adminInlineKeyboardButtons.slice(0, 2)],
-              [...adminInlineKeyboardButtons.slice(2, 3)],
-              [...adminInlineKeyboardButtons.slice(3)],
+              [...adminInlineKeyboardButtons.slice(2, 4)],
+              [...adminInlineKeyboardButtons.slice(4)],
             ],
+            resize_keyboard: true,
           },
         })
         .catch();
@@ -1050,6 +1115,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             case 'getConfigUsers':
               getConfigUsers(msg);
               break;
+            case 'getActiveUsers':
+              getActiveUsers(msg);
+              break;
             case 'resetData':
               resetData(msg);
               break;
@@ -1125,23 +1193,44 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   });
 
   // Listen for data sent back from the Mini App (via tg.sendData)
+  let logCount = 0;
   bot.on('message', async (msg) => {
     const {
       chat: { id: chatId, first_name, last_name, username },
     } = msg;
+    const userId = msg.from?.id;
+    if (!userId) return;
+
+    const asAdmin = isAdmin(msg.chat);
+    const asAdminMember = isMemberAsAdmin(msg.chat);
+
     const { fullname, fullnameWithUsername } = getFullname(msg.chat);
     const text = msg.text?.trim() || '';
+    const nameWithChatId = fullname + '|' + chatId;
+    const currentDateString = new Date().toLocaleString().replace(',', ' |');
     const logging = [
       'message',
       text.startsWith('/') ? text : `<code>${text}</code>`,
       'by user:',
-      fullnameWithUsername,
+      chalk.blue.bold(nameWithChatId),
       'at',
-      new Date().toLocaleString().replace(',', ' |'),
-    ].join(' ');
+      chalk.yellow(currentDateString),
+    ];
+    console.log(logging.join(' '));
+    logging[3] = nameWithChatId;
+    logging[5] = currentDateString;
+
+    if (!asAdmin && !activeUserMap.has(userId)) {
+      activeUserMap.set(userId, {
+        fullnameWithUsername: fullnameWithUsername,
+        username: msg.from?.username,
+        firstSeen: new Date(),
+      });
+    }
+
     if (currentDate.day() === new Date().getDate()) {
-      const allLoggingCaches = Array.from(loggingCache.values());
-      if (allLoggingCaches.length > 50) {
+      if (logCount > 50) {
+        const allLoggingCaches = Array.from(loggingCache.values());
         loggingCache.clear();
         allLoggingCaches
           .reverse()
@@ -1151,14 +1240,12 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             loggingCache.add(l);
           });
       }
-      loggingCache.add(logging);
+      logCount++;
+      loggingCache.add(logging.join(' '));
     } else {
       loggingCache.clear();
     }
-    console.log(logging);
 
-    const asAdmin = isAdmin(msg.chat);
-    const asAdminMember = isMemberAsAdmin(msg.chat);
     if (
       [
         '/add',
@@ -1173,11 +1260,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       ].some((t) => text.startsWith(t)) &&
       !asAdmin
     ) {
-      await bot.sendMessage(
-        chatId,
-        `Hey, <b>${fullname}</b>!\n⚠️ You don't have permission this use this action.`,
-        { parse_mode: 'HTML' }
-      );
+      await alertNoPermissionMessage(bot, chatId, fullname);
       return;
     }
     const { chadId, messageId } = { ...invalidMessage };
@@ -1199,6 +1282,10 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         await onTextNumberAction(bot, msg.chat, t);
       }
     }
+  });
+
+  bot.on('polling_error', (error) => {
+    console.error('[Polling Error]', error.name, error.message);
   });
 
   bot.on('photo', async (msg) => {

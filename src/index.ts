@@ -37,7 +37,6 @@ const bot = new TelegramBot(
   TOKEN,
   IS_DEV ? { polling: true } : { webHook: true }
 );
-runBot(bot, { webAppUrl });
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -208,7 +207,6 @@ const app = new Elysia({
   .get('/bot.js', () => file('./public/bot.js'))
   .get('/wl/*', async ({ params, query }) => {
     if (query.web === 'html') {
-      bot.sendMessage(Date.now(), 'Testing message');
       return file('./public/web-app.html');
     }
     const logCode = params['*'];
@@ -364,5 +362,6 @@ if (IS_DEV) {
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
+runBot(bot, { webAppUrl });
 
 export default app;

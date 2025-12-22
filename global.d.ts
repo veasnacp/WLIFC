@@ -8,4 +8,18 @@ declare global {
     };
     setUpTelegramWebApp: VoidFunction;
   }
+  namespace NodeJS {
+    interface ProcessEnv {
+      NODE_ENV: 'development' | 'production' | 'test';
+      BOT_TOKEN?: string;
+      WEB_APP_URL?: string;
+      WL_PUBLIC_URL?: string;
+      WL_COOKIE?: string;
+      WL_MEMBERS_LIST?: string;
+      CONTAINER_CONTROLLER?: string;
+      VERCEL_PUBLIC_URL?: string;
+      ADMIN?: string;
+      ADMIN_ID?: string;
+    }
+  }
 }

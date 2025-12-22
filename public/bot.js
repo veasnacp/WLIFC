@@ -44,7 +44,6 @@ window.setUpTelegramWebApp = function () {
                     path = window.location.pathname;
                     if (!(path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp)) return [3 /*break*/, 7];
                     tg = window.Telegram.WebApp;
-                    tg.expand();
                     _a.label = 1;
                 case 1:
                     _a.trys.push([1, 5, , 6]);
