@@ -204,7 +204,6 @@ const app = new Elysia({
   .get('/', ({ html }) => {
     return html('<b>Welcome to WL Checker!!!</b>');
   })
-  .get('/favicon.ico', () => file('./public/favicon.ico'))
   .get('/bot.js', () => file('./public/bot.js'))
   .get('/wl/*', async ({ params, query }) => {
     if (query.web === 'html') {
