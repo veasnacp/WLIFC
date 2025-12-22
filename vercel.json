@@ -3,7 +3,7 @@
   "bunVersion": "1.x",
   "functions": {
     "api/*.ts":{
-      "runtime": "bunVersion"
+      "runtime": "bun@1.3.4"
     }
   },
   "rewrites": [
