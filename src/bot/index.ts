@@ -14,7 +14,7 @@ import {
   MultiFormatReader,
   RGBLuminanceSource,
 } from '@zxing/library';
-import chalk from 'chalk';
+// import chalk from 'chalk';
 
 export const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
 export const ADMIN_LIST = process.env.ADMIN;
@@ -1212,9 +1212,11 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       'message',
       text.startsWith('/') ? text : `<code>${text}</code>`,
       'by user:',
-      chalk.blue.bold(nameWithChatId),
+      // chalk.blue.bold(nameWithChatId),
+      nameWithChatId,
       'at',
-      chalk.yellow(currentDateString),
+      // chalk.yellow(currentDateString),
+      currentDateString,
     ];
     console.log(logging.join(' '));
     logging[3] = nameWithChatId;

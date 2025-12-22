@@ -37,7 +37,6 @@ const bot = new TelegramBot(
   TOKEN,
   IS_DEV ? { polling: true } : { webHook: true }
 );
-runBot(bot, { webAppUrl });
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -205,6 +204,7 @@ const app = new Elysia({
   .get('/', ({ html }) => {
     return html('<b>Welcome to WL Checker!!!</b>');
   })
+  .get('/favicon.ico', () => file('./public/favicon.ico'))
   .get('/bot.js', () => file('./public/bot.js'))
   .get('/wl/*', async ({ params, query }) => {
     if (query.web === 'html') {
@@ -363,5 +363,6 @@ if (IS_DEV) {
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
+runBot(bot, { webAppUrl });
 
 export default app;
