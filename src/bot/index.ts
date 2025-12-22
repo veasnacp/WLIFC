@@ -328,6 +328,8 @@ export async function ShowDataMessageAndPhotos(
   options: {
     logCode: string;
     isTrackingNumber: boolean;
+    asAdmin: boolean;
+    asAdminMember: boolean;
     asMemberContainerController: boolean;
     hasSubLogCodeCache?: boolean;
     loadingMsgId?: number;
@@ -338,6 +340,8 @@ export async function ShowDataMessageAndPhotos(
     logCode,
     isTrackingNumber,
     hasSubLogCodeCache,
+    asAdmin,
+    asAdminMember,
     asMemberContainerController,
     loadingMsgId,
   } = options;
@@ -384,17 +388,12 @@ export async function ShowDataMessageAndPhotos(
           data.container_num?.split('-').slice(1).join('.') ||
           'N/A(ប្រហែលជើងអាកាស)'
         }\n`,
-        asMemberContainerController
-          ? ''.concat(
-              '- ទូរកុងតឺន័រ: ',
-              data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
-              '\n'
-            )
-          : '',
         `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
         `- ចំនួន: ${data.goods_number}\n`,
         isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
-        `- ទម្ងន់: ${data.weight}kg\n`,
+        `- ទម្ងន់: ${
+          data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
+        }kg\n`,
         `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
         `- ម៉ែត្រគូបផ្សេងគ្នា: ${
           data.volume_record?.trim()
@@ -417,7 +416,14 @@ export async function ShowDataMessageAndPhotos(
         `- ទំនិញ: ${data.goods_name}${
           data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
         }\n`,
-        `- ផ្សេងៗ: ${data.desc}\n`
+        asAdmin || asAdminMember || asMemberContainerController
+          ? ''.concat(
+              '- ទូរកុងតឺន័រ: ',
+              data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
+              '\n'
+            )
+          : '',
+        `- ផ្សេងៗ: ${data.desc.replace('到达', '到达(មកដល់)')}\n`
       )
       .substring(0, MAX_TEXT_LENGTH);
     caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
@@ -699,6 +705,8 @@ export async function onTextNumberAction(
       logCode,
       isTrackingNumber,
       hasSubLogCodeCache,
+      asAdmin,
+      asAdminMember,
       asMemberContainerController,
       loadingMsgId,
       withMore: options?.withMore,

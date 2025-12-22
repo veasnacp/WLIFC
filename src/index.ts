@@ -10,6 +10,8 @@ import {
   cacheData,
   config,
   getValidationOptions,
+  isAdmin,
+  isMemberAsAdmin,
   isMemberAsContainerController,
   runBot,
   ShowDataMessageAndPhotos,
@@ -173,6 +175,8 @@ const app = new Elysia({
       if (logCode)
         try {
           const isTrackingNumber = !logCode.startsWith('25');
+          const asAdmin = isAdmin(user);
+          const asAdminMember = isMemberAsAdmin(user);
           const asMemberContainerController =
             isMemberAsContainerController(user);
           const data = JSON.parse(result);
@@ -184,6 +188,8 @@ const app = new Elysia({
             logCode,
             isTrackingNumber,
             hasSubLogCodeCache: options?.isSubLogCode,
+            asAdmin,
+            asAdminMember,
             asMemberContainerController,
             // loadingMsgId,
             // withMore,
