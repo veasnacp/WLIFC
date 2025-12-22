@@ -37,6 +37,7 @@ const bot = new TelegramBot(
   TOKEN,
   IS_DEV ? { polling: true } : { webHook: true }
 );
+runBot(bot, { webAppUrl });
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -362,6 +363,5 @@ if (IS_DEV) {
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
-runBot(bot, { webAppUrl });
 
 export default app;
