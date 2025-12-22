@@ -16,6 +16,7 @@
     "@types/tough-cookie": "^4.0.5",
     "@yolk-oss/elysia-env": "^3.0.0",
     "@zxing/library": "^0.21.3",
+    "chalk": "^5.6.2",
     "elysia": "latest",
     "file-type": "3.9.0",
     "jimp": "^1.6.0",
