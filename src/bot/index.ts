@@ -328,8 +328,8 @@ export async function ShowDataMessageAndPhotos(
   options: {
     logCode: string;
     isTrackingNumber: boolean;
-    asAdmin: boolean;
-    asAdminMember: boolean;
+    asAdmin?: boolean;
+    asAdminMember?: boolean;
     asMemberContainerController: boolean;
     hasSubLogCodeCache?: boolean;
     loadingMsgId?: number;
@@ -423,7 +423,7 @@ export async function ShowDataMessageAndPhotos(
               '\n'
             )
           : '',
-        `- ផ្សេងៗ: ${data.desc.replace('到达', '到达(មកដល់)')}\n`
+        `- ផ្សេងៗ: ${data.desc?.replace('到达', '到达(មកដល់)') || 'N/A'}\n`
       )
       .substring(0, MAX_TEXT_LENGTH);
     caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
