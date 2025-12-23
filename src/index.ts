@@ -128,9 +128,12 @@ const app = new Elysia({
     }
   })
   // Delete webhook endpoint
-  .get('/api/delete-webhook', async () => {
+  .get('/api/delete-webhook', async ({ query }) => {
     try {
       const result = await bot.deleteWebHook();
+      if (query.polling === 'true') {
+        await bot.startPolling();
+      }
       return {
         success: true,
         message: 'Webhook deleted',
