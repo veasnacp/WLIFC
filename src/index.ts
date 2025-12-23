@@ -85,6 +85,28 @@ const app = new Elysia({
     })
   )
   .use(html())
+  .onStart(async () => {
+    if (!IS_DEV)
+      try {
+        await bot.setWebHook(WEBHOOK_URL, {
+          max_connections: 40,
+          // @ts-ignore
+          drop_pending_updates: true,
+        });
+        console.log(`🚀 Webhook set to: ${WEBHOOK_URL}`);
+      } catch (error) {
+        console.error('❌ Failed to set webhook on startup:', error);
+      }
+  })
+  .onStop(async () => {
+    if (!IS_DEV)
+      try {
+        await bot.deleteWebHook();
+        console.log('🛑 Webhook deleted. Bot shutting down safely.');
+      } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+      }
+  })
   // Health check endpoint
   .get('/api/health', () => ({
     status: 'healthy',
@@ -115,7 +137,14 @@ const app = new Elysia({
       }
       const { protocol, host } = new URL(request.url);
       const WEBHOOK_URL = `${protocol}//${host}/webhook`;
-      await bot.setWebHook(WEBHOOK_URL, { max_connections: 40 });
+      await bot.setWebHook(WEBHOOK_URL, {
+        max_connections: 40,
+        // @ts-ignore
+        drop_pending_updates: true,
+      });
+      if (query.polling === 'false') {
+        await bot.startPolling();
+      }
       return {
         success: true,
         message: `Webhook set to ${WEBHOOK_URL}`,
