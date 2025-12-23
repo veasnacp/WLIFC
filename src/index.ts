@@ -35,8 +35,20 @@ if (!TOKEN || !webAppUrl) {
 // Initialize Telegram Bot
 const bot = new TelegramBot(
   TOKEN,
-  IS_DEV ? { polling: true } : { webHook: true }
+  IS_DEV ? { polling: true } : { webHook: true, polling: false }
 );
+
+async function switchToPolling() {
+  if (IS_DEV)
+    try {
+      await bot.deleteWebHook();
+      bot.startPolling();
+      console.log('🔄 Switched to Polling mode.');
+    } catch (error) {
+      console.error('❌ Failed to switch to polling:', error);
+    }
+}
+switchToPolling();
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -157,11 +169,11 @@ const app = new Elysia({
     '/api/submit-app-data',
     async ({ body, set }) => {
       const { initData, result, logCode } = body;
+      set.status = 200;
 
       // 1. Security Check
       if (!validateTelegramData(initData, TOKEN as string)) {
-        set.status = 401;
-        return { error: 'Invalid data source' };
+        return { success: false, error: 'Invalid data source' };
       }
 
       // 2. Extract user ID from initData
@@ -206,7 +218,8 @@ const app = new Elysia({
   })
   .get('/favicon.ico', () => file('./public/favicon.ico'))
   .get('/bot.js', () => file('./public/bot.js'))
-  .get('/wl/*', async ({ params, query }) => {
+  .get('/wl/*', async ({ params, query, set }) => {
+    set.status = 200;
     if (query.web === 'html') {
       return file('./public/web-app.html');
     }
