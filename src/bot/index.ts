@@ -2,8 +2,19 @@ import TelegramBot from 'node-telegram-bot-api';
 import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
-import { IS_DEV, PUBLIC_URL } from '../config/constants';
+import {
+  chunkArray,
+  isArray,
+  isNumber,
+  isObject,
+  removeDuplicateObjArray,
+} from '../utils/is';
+import {
+  IS_DEV,
+  PUBLIC_URL,
+  WL_PRIVATE_API,
+  WL_PUBLIC_URL,
+} from '../config/constants';
 import translate from '@iamtraction/google-translate';
 import { Jimp } from 'jimp';
 import {
@@ -14,6 +25,7 @@ import {
   MultiFormatReader,
   RGBLuminanceSource,
 } from '@zxing/library';
+import { STICKER_ID } from './sticker';
 // import chalk from 'chalk';
 
 export const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
@@ -66,12 +78,16 @@ const currentDate = {
   },
 };
 let DATA: Iterable<readonly [string, Data]> | undefined;
+let USERS_DATA: Iterable<readonly [number, ActiveUserData]> | undefined;
 const publicPath = path.join(process.cwd(), 'public');
+const cachePath = path.join(process.cwd(), 'cache');
+const usersFile = path.join(cachePath, 'users.json');
 const currentFileName = `data-${currentDate.month()}-${currentDate.day()}.json`;
-const fileData = path.join(publicPath, currentFileName);
+const fileData = path.join(cachePath, currentFileName);
 const fs = process.getBuiltinModule('fs');
-if (IS_DEV) {
-  if (fs && fs.existsSync(fileData)) {
+
+if (IS_DEV && fs) {
+  if (fs.existsSync(fileData)) {
     const dataString = fs.readFileSync(fileData, { encoding: 'utf-8' });
     if (dataString.startsWith('[') && dataString.endsWith(']')) {
       try {
@@ -79,15 +95,25 @@ if (IS_DEV) {
       } catch {}
     }
   }
+  if (fs.existsSync(usersFile)) {
+    const dataString = fs.readFileSync(usersFile, { encoding: 'utf-8' });
+    if (dataString.startsWith('[') && dataString.endsWith(']')) {
+      try {
+        USERS_DATA = JSON.parse(dataString);
+      } catch {}
+    }
+  }
 }
+
 type ConfigCache = {
   cookie: string;
   ADMIN_LIST: string[];
   WL_MEMBERS_LIST: string[];
   CONTAINER_CONTROLLER_LIST: string[];
   bannedUsers: string[];
-  status: 'sleep' | 'deactivated' | 'maintenance' | (string & {});
+  status: 'active' | 'sleep' | 'deactivated' | 'maintenance' | (string & {});
   statusMessage: string;
+  waitingCookie: boolean;
 };
 type PreMapConfig = Map<keyof ConfigCache, ConfigCache[keyof ConfigCache]>;
 type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
@@ -115,17 +141,40 @@ if (process.env.BOT_STATUS === 'maintenance')
 
 interface ActiveUserData {
   fullnameWithUsername: string;
+  id?: number | string;
   username?: string;
   firstSeen: Date;
 }
-export const activeUserMap = new Map<number, ActiveUserData>();
+export const activeUserMap = new Map<number, ActiveUserData>(USERS_DATA);
 
 const loggingCache = new Set<string>();
 
-let invalidMessage = { chadId: undefined, messageId: undefined } as Record<
-  'chadId' | 'messageId',
+let invalidMessage = { chatId: undefined, messageId: undefined } as Record<
+  'chatId' | 'messageId',
   number | undefined
 >;
+
+export async function saveUser(bot: TelegramBot, msg: TelegramBot.Message) {
+  if (!fs) return;
+
+  const chatId = msg.chat.id;
+  if (IS_DEV && isAdmin(msg.chat))
+    try {
+      const activeUserData = [...activeUserMap.entries()];
+      if (activeUserData.length) {
+        fs.writeFileSync(usersFile, JSON.stringify(activeUserData));
+      }
+      let message = 'no active user';
+      if (activeUserData.length) {
+        message = `✅ Successfully save users to file:\`${usersFile}\``;
+      }
+      await bot
+        .sendMessage(chatId, message, { parse_mode: 'Markdown' })
+        .catch();
+    } catch (error: any) {
+      console.log('Error save users', error.message);
+    }
+}
 
 export const deleteInlineKeyboardButton = {
   text: 'Delete',
@@ -169,27 +218,35 @@ export function sendMessageOptions(
 
 export const adminInlineKeyboardButtons = [
   {
-    text: 'LogCodes',
+    text: '🆔 LogCodes',
     callback_data: 'getLogCodes',
   },
   {
-    text: 'Logging',
+    text: '📊 Logging',
     callback_data: 'getLogging',
   },
   {
-    text: 'Config Users',
+    text: '🟢 Status',
+    callback_data: 'setStatus',
+  },
+  {
+    text: '👨‍⚖ Config Users',
     callback_data: 'getConfigUsers',
   },
   {
-    text: 'Active Users',
+    text: '👥 Active Users',
     callback_data: 'getActiveUsers',
   },
   {
-    text: 'Reset Data',
+    text: '💾 Save Users',
+    callback_data: 'saveUsers',
+  },
+  {
+    text: '🔄 Reset Data',
     callback_data: 'resetData',
   },
   {
-    text: 'Clear All',
+    text: '🚮 Clear All',
     callback_data: 'clear',
   },
 ] as const;
@@ -221,6 +278,32 @@ export const getFullname = (chat: TelegramBot.Chat) => {
     (first_name || '') + (last_name ? ` ${last_name}` : '') || 'Anonymous';
   const fullnameWithUsername = fullname + (username ? `(@${username})` : '');
   return { fullname, fullnameWithUsername };
+};
+
+export const statusMessage = {
+  active: 'Currently, the Bot is active.',
+  sleep:
+    "ខ្ញុំជាប់រវល់ហើយ ⏳ សូមមេត្តារងចាំ...\n🤓 Sorry, I'm too busy. Please wait...",
+  deactivated: '🔴 ប្រព័ន្ធបានបិទដំណើរហើយ។\nThe system has been deactivated.',
+  maintenance:
+    '👨‍💻 ប្រព័ន្ធកំពុងធ្វើបច្ចុប្បន្នភាព!!! ☕ សូមមេត្តារងចាំបន្តិច...\n🤓 The system is updating. Please wait...',
+};
+
+export const getStatusMessage = (status?: ConfigCache['status']) => {
+  const customStatusMessage = config.get('statusMessage');
+  let message = statusMessage.sleep;
+  switch (status) {
+    case 'deactivated':
+      message = statusMessage.deactivated;
+      break;
+    case 'maintenance':
+      message = statusMessage.maintenance;
+      break;
+    default:
+      break;
+  }
+  message = customStatusMessage?.trim() || message;
+  return message;
 };
 
 export const showMoreDataCaption = async (
@@ -429,6 +512,20 @@ export async function ShowDataMessageAndPhotos(
     caption = textMessage.substring(0, MAX_CAPTION_LENGTH);
   }
 
+  const sendFullCaption = async () => {
+    if (caption) {
+      await bot.sendMessage(
+        chatId,
+        caption,
+        sendMessageOptions({
+          translateText: logCode,
+          logCodeForShowMore: logCode,
+          chat,
+        })
+      );
+    }
+  };
+
   const showMoreCaption = () =>
     options?.withMore && showMoreDataCaption(bot, chatId, data);
 
@@ -485,11 +582,15 @@ export async function ShowDataMessageAndPhotos(
     };
     await sendPhoto(photos[0]);
     if (isError) {
+      isError = false;
       const tryLoadingMessage = await bot.sendMessage(
         chatId,
         '⏳ Trying load image...'
       );
       await sendPhoto(`${PUBLIC_URL}/blob/image?url=${photos[0]}`);
+      if (isError) {
+        await sendFullCaption();
+      }
       if (errorMessageId) {
         await bot.deleteMessage(chatId, errorMessageId).catch();
         bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
@@ -540,17 +641,7 @@ export async function ShowDataMessageAndPhotos(
         await bot.deleteMessage(chatId, tryLoadingMessage.message_id).catch();
       }
     }
-    if (caption) {
-      await bot.sendMessage(
-        chatId,
-        caption,
-        sendMessageOptions({
-          translateText: logCode,
-          logCodeForShowMore: logCode,
-          chat,
-        })
-      );
-    }
+    await sendFullCaption();
     await showMoreCaption();
   }
 }
@@ -565,19 +656,22 @@ export async function onTextNumberAction(
   const asAdminMember = isMemberAsAdmin(chat);
   const asMemberContainerController = isMemberAsContainerController(chat);
   const status = config.get('status');
-  const customStatusMessage = config.get('statusMessage');
   if (
     !asAdmin &&
     ['sleep', 'deactivated', 'maintenance'].some((t) => t === status)
   ) {
-    bot.sendMessage(
-      chatId,
-      customStatusMessage?.trim() ||
-        ''.concat(
-          'ខ្ញុំជាប់រវល់ហើយ\n',
-          "🤓🤓 Sorry, I'm too busy. Please wait..."
-        )
-    );
+    const message = getStatusMessage(status);
+    switch (status) {
+      case 'sleep':
+        await bot.sendSticker(chatId, STICKER_ID.busy);
+        break;
+      case 'maintenance':
+        await bot.sendSticker(chatId, STICKER_ID.working);
+        break;
+      default:
+        break;
+    }
+    await bot.sendMessage(chatId, message);
     return;
   }
   if (!logCode) return;
@@ -634,10 +728,11 @@ export async function onTextNumberAction(
     const wl = new WLLogistic(logCode, cookie);
     wl.asAdminMember = asAdminMember;
     wl.onError = function (error) {
+      console.error('Error Fetch Data', error);
       bot
         .sendMessage(chatId, 'oOP! Unavailable to access data.')
         .then((message) => {
-          invalidMessage.chadId = chatId;
+          invalidMessage.chatId = chatId;
           invalidMessage.messageId = message.message_id;
         });
     };
@@ -682,19 +777,54 @@ export async function onTextNumberAction(
     }
     if (refetchData) {
       const wl_data = await wl.getDataFromLogCode(
-        undefined,
+        logCode,
         options?.showAllSmallPackage,
         options?.isSubLogCode
       );
       if (wl_data && 'message' in wl_data && wl_data.message === 'not found') {
         await bot.deleteMessage(chatId, loadingMsgId);
-        bot.sendMessage(
+        await bot.sendMessage(
           chatId,
-          `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
+          wl_data.requireLogin
+            ? '❌ oOP! Unavailable to access data.'
+            : `🤷 លេខបុង <b>${logCode}</b> មិនទាន់មានទិន្នន័យនោះទេ។\n🤓 សូមពិនិត្យមើលឡើងវិញម្តងទៀត...`,
           sendMessageOptions({
             parse_mode: 'HTML',
           })
         );
+        if (
+          wl_data.requireLogin &&
+          process.env.ADMIN_ID &&
+          config.get('status') !== 'maintenance'
+        ) {
+          config.set('status', 'maintenance');
+          try {
+            bot.sendMessage(chatId, statusMessage.maintenance);
+            await bot.sendSticker(chatId, STICKER_ID.working);
+            bot.sendMessage(
+              Number(process.env.ADMIN_ID.split(',')[0]),
+              'Hey, Admin! Please login and update cookie.',
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      {
+                        text: 'Goto Login',
+                        url: `${WL_PUBLIC_URL}${wl_data.path}`,
+                      },
+                      { text: 'Update Cookie', url: WL_PRIVATE_API },
+                    ],
+                  ],
+                },
+              }
+            );
+          } catch (error: any) {
+            console.error(
+              'Error to send a notification to admin.',
+              error.message
+            );
+          }
+        }
         return;
       } else {
         // @ts-ignore
@@ -862,6 +992,23 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       alertNoPermissionMessage(bot, chatId, fullname);
     }
   });
+  bot.onText(/\/test (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    let base = match?.[1].trim();
+
+    if (!base) return;
+    if (!base.includes('.')) {
+      base = `${base}.jpg`;
+    }
+
+    const url = `${PUBLIC_URL}/blob/image?url=${WL_PUBLIC_URL}/upload/${base}`;
+    try {
+      await bot.sendPhoto(chatId, url);
+    } catch (error: any) {
+      console.error('Error send photo', error);
+    }
+  });
+
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
 
@@ -871,15 +1018,55 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     );
   });
 
+  const setCookie = async (
+    chatId: TelegramBot.ChatId,
+    cookie: string,
+    options?: { testingData?: boolean; asAdminMember?: boolean }
+  ) => {
+    cookie = !cookie.startsWith('PHPSESSID=')
+      ? 'PHPSESSID='.concat(cookie)
+      : cookie;
+    config.set('cookie', cookie);
+    await bot.sendMessage(
+      chatId,
+      '✅ Successfully set new cookie. Then try to get data...'
+    );
+    options = options || {};
+    if (options.testingData) {
+      const wl = new WLLogistic('251209180405', cookie);
+      wl.asAdminMember = Boolean(options.asAdminMember);
+      wl.onError = function (error) {
+        console.error('Error Fetch Data', error);
+        bot.sendMessage(chatId, 'oOP! Unavailable to access data.');
+      };
+      const dataList = await wl.getFirstData();
+      const isRequireLogin = isObject(dataList) && 'url' in dataList;
+      await bot.sendMessage(
+        chatId,
+        isRequireLogin
+          ? 'Login is requires.'
+          : `✅ Successfully testing data(dataList.length = ${dataList.length})`
+      );
+      if (!isRequireLogin && isArray(dataList)) {
+        config.set('status', 'active');
+      }
+    }
+  };
+  bot.onText(/\/setCookie/, async (msg) => {
+    const chatId = msg.chat.id;
+    config.set('waitingCookie', true);
+    await bot.sendMessage(chatId, 'Please give me the cookie.');
+  });
+
   bot.onText(/\/setCookie (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const cookie = match?.[1]?.trim();
+    let cookie = match?.[1]?.trim();
+    const asAdminMember = isMemberAsAdmin(msg.chat);
     if (typeof cookie === 'string') {
-      config.set(
-        'cookie',
-        !cookie.startsWith('PHPSESSID=') ? 'PHPSESSID='.concat(cookie) : cookie
-      );
-      bot.sendMessage(chatId, '✅ Successfully set new cookie');
+      await setCookie(chatId, cookie, { testingData: true, asAdminMember });
+    } else {
+      config.set('waitingCookie', true);
+      await bot.sendMessage(chatId, 'Please give me the cookie.');
     }
   });
 
@@ -936,18 +1123,29 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       const data = Array.from(activeUserMap.entries());
       let message = 'no active user';
       if (data.length) {
-        message = data
-          .map(([id, u]) => `${id}|${u.fullnameWithUsername}`)
-          .join('\n')
-          .substring(0, MAX_TEXT_LENGTH);
+        message = 'All active members of WL Checker Bot';
       }
-      await bot.sendMessage(chatId, message).catch();
+      await bot
+        .sendMessage(chatId, message, {
+          reply_markup: data.length
+            ? {
+                inline_keyboard: chunkArray(
+                  data.map(([id, d]) => ({
+                    text: d.fullnameWithUsername,
+                    callback_data: `user_info_${id}`,
+                  })),
+                  3
+                ),
+              }
+            : undefined,
+        })
+        .catch();
     }
   };
   const resetData = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     cacheData.clear();
-    if (IS_DEV) {
+    if (IS_DEV && isAdmin(msg.chat)) {
       const fs = process.getBuiltinModule('fs');
       if (fs && fs.existsSync(fileData)) {
         fs.unlinkSync(fileData);
@@ -961,17 +1159,17 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       let isError = false;
       let message = '✅ Done!!!';
       if (fs && IS_DEV) {
-        const files = fs.readdirSync(publicPath);
+        const files = fs.readdirSync(cachePath);
         const filesToDelete = files.filter((file) => {
           const isException = file === currentFileName;
           const isJson = path.extname(file).toLowerCase() === '.json';
 
-          const fullPath = path.join(publicPath, file);
+          const fullPath = path.join(cachePath, file);
           const isFile = fs.statSync(fullPath).isFile();
           return isJson && isFile && !isException;
         });
         filesToDelete.forEach((file) => {
-          const filePath = path.join(publicPath, file);
+          const filePath = path.join(cachePath, file);
           try {
             fs.unlinkSync(filePath);
           } catch (err) {
@@ -989,7 +1187,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   const getLogCodes = async (msg: TelegramBot.Message) => {
     const chatId = msg.chat.id;
     const data = Array.from(cacheData.values());
-    bot.sendMessage(
+    await bot.sendMessage(
       chatId,
       data.length
         ? data
@@ -1009,7 +1207,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const loggingData = Array.from(loggingCache.values());
     if (loggingData.length) {
       try {
-        bot.sendMessage(
+        await bot.sendMessage(
           chatId,
           loggingData.join('\n').substring(0, MAX_TEXT_LENGTH),
           sendMessageOptions({ parse_mode: 'HTML' })
@@ -1017,23 +1215,53 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       } catch {}
     }
   };
+  const setStatus = async (msg: TelegramBot.Message) => {
+    const chatId = msg.chat.id;
+    if (isAdmin(msg.chat)) {
+      const status = config.get('status');
+      bot
+        .sendMessage(
+          chatId,
+          'Currently, the Bot is '.concat(status || 'active', '.'),
+          {
+            reply_markup: {
+              inline_keyboard: chunkArray(
+                ['active', 'sleep', 'deactivated', 'maintenance'].map((s) => ({
+                  text: `Set to ${s.toUpperCase()}`,
+                  callback_data: `set_status_${s}`,
+                })),
+                2
+              ),
+            },
+          }
+        )
+        .catch();
+    }
+  };
 
   bot.onText(/(\/settings|\/stg)/, (msg) => {
     const chatId = msg.chat.id;
 
-    if (isAdmin(msg.chat))
+    if (isAdmin(msg.chat)) {
+      const status = config.get('status') || 'active';
       bot
-        .sendMessage(chatId, 'All Buttons for admin', {
-          reply_markup: {
-            inline_keyboard: [
-              [...adminInlineKeyboardButtons.slice(0, 2)],
-              [...adminInlineKeyboardButtons.slice(2, 4)],
-              [...adminInlineKeyboardButtons.slice(4)],
-            ],
-            resize_keyboard: true,
-          },
-        })
+        .sendMessage(
+          chatId,
+          'All buttons for Administrators. Status: '.concat(
+            status.toUpperCase()
+          ),
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [...adminInlineKeyboardButtons.slice(0, 3)],
+                [...adminInlineKeyboardButtons.slice(3, 6)],
+                [...adminInlineKeyboardButtons.slice(6)],
+              ],
+            },
+          }
+        )
         .catch();
+    }
   });
 
   bot.onText(/\/getLogCodes/, getLogCodes);
@@ -1041,6 +1269,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   bot.onText(/\/getConfigUsers/, getConfigUsers);
   bot.onText(/\/resetData/, resetData);
   bot.onText(/\/clear/, clearAll);
+  bot.onText(/\/status/, setStatus);
   bot.onText(/\/setStatus (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const [text, ...other] = match?.[1].split('|') || [];
@@ -1112,6 +1341,27 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             `👉 ${fullname} clicked show more button from log code /${logCode}`
           );
           await showMoreDataCaption(bot, chatId, data);
+        } else if (action?.startsWith('user_info_')) {
+          const userId = action.replace('user_info_', '');
+          if (isNumber(userId)) {
+            const id = Number(userId);
+            const member = activeUserMap.get(id);
+            if (member) {
+              member.id = `\`${id}\``;
+              await bot.sendMessage(chatId, JSON.stringify(member, null, 2), {
+                parse_mode: 'Markdown',
+              });
+            }
+          }
+        } else if (action?.startsWith('set_status_')) {
+          const status = action.replace(
+            'set_status_',
+            ''
+          ) as keyof typeof statusMessage;
+          config.set('status', status);
+          await bot.sendMessage(chatId, statusMessage[status], {
+            parse_mode: 'Markdown',
+          });
         } else {
           switch (action as AdminInlineKeyboardAction) {
             case 'getLogCodes':
@@ -1120,11 +1370,17 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
             case 'getLogging':
               getLogging(msg);
               break;
+            case 'setStatus':
+              setStatus(msg);
+              break;
             case 'getConfigUsers':
               getConfigUsers(msg);
               break;
             case 'getActiveUsers':
               getActiveUsers(msg);
+              break;
+            case 'saveUsers':
+              saveUser(bot, msg);
               break;
             case 'resetData':
               resetData(msg);
@@ -1209,26 +1465,31 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     const userId = msg.from?.id;
     if (!userId) return;
 
+    const { fullname, fullnameWithUsername } = getFullname(msg.chat);
+    const text = msg.text?.trim() || '';
+
     const asAdmin = isAdmin(msg.chat);
     const asAdminMember = isMemberAsAdmin(msg.chat);
 
-    const { fullname, fullnameWithUsername } = getFullname(msg.chat);
-    const text = msg.text?.trim() || '';
+    if (asAdmin) {
+      if (text && config.get('waitingCookie') === true) {
+        config.set('waitingCookie', false);
+        await setCookie(chatId, text, { testingData: true, asAdminMember });
+        return;
+      }
+    }
+
     const nameWithChatId = fullname + '|' + chatId;
     const currentDateString = new Date().toLocaleString().replace(',', ' |');
     const logging = [
       'message',
       text.startsWith('/') ? text : `<code>${text}</code>`,
       'by user:',
-      // chalk.blue.bold(nameWithChatId),
       nameWithChatId,
       'at',
-      // chalk.yellow(currentDateString),
       currentDateString,
     ];
     console.log(logging.join(' '));
-    logging[3] = nameWithChatId;
-    logging[5] = currentDateString;
 
     if (!asAdmin && !activeUserMap.has(userId)) {
       activeUserMap.set(userId, {
@@ -1240,6 +1501,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
 
     if (currentDate.day() === new Date().getDate()) {
       if (logCount > 50) {
+        logCount = 0;
         const allLoggingCaches = Array.from(loggingCache.values());
         loggingCache.clear();
         allLoggingCaches
@@ -1273,12 +1535,12 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       await alertNoPermissionMessage(bot, chatId, fullname);
       return;
     }
-    const { chadId, messageId } = { ...invalidMessage };
-    if (chadId && messageId) {
+    const { chatId: chat_id, messageId } = { ...invalidMessage };
+    if (chat_id && messageId) {
       try {
-        invalidMessage.chadId = undefined;
+        invalidMessage.chatId = undefined;
         invalidMessage.messageId = undefined;
-        await bot.deleteMessage(chadId, messageId, {
+        await bot.deleteMessage(chat_id, messageId, {
           parse_mode: 'Markdown',
         });
       } catch (error) {
@@ -1296,6 +1558,21 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
 
   bot.on('polling_error', (error) => {
     console.error('[Polling Error]', error.name, error.message);
+  });
+
+  bot.on('sticker', (msg) => {
+    const stickerId = msg.sticker?.file_id;
+    const stickerSet = msg.sticker?.set_name;
+    if (isAdmin(msg.chat)) {
+      console.log(`Sticker ID: ${stickerId}`);
+      console.log(`From Set: ${stickerSet}`);
+      // The bot will reply with the ID so you can copy it easily
+      bot.sendMessage(
+        msg.chat.id,
+        `The ID for this sticker is:\n\`${stickerId}\``,
+        { parse_mode: 'Markdown' }
+      );
+    }
   });
 
   bot.on('photo', async (msg) => {

@@ -20,6 +20,7 @@ import {
   PUBLIC_URL,
   TOKEN,
   WEB_APP_URL,
+  WL_PUBLIC_URL,
 } from './config/constants';
 
 const NODE_ENV = process.env.NODE_ENV;
@@ -37,18 +38,6 @@ const bot = new TelegramBot(
   TOKEN,
   IS_DEV ? { polling: true } : { webHook: true, polling: false }
 );
-
-async function switchToPolling() {
-  if (IS_DEV)
-    try {
-      await bot.deleteWebHook();
-      bot.startPolling();
-      console.log('🔄 Switched to Polling mode.');
-    } catch (error) {
-      console.error('❌ Failed to switch to polling:', error);
-    }
-}
-switchToPolling();
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -332,11 +321,15 @@ const app = new Elysia({
     };
   })
   .get('/wl/display-image', ({ query, html }) => {
-    let { image = '', path = '' } = query;
-    if (path.trim().startsWith('http')) {
-      path = path.split('://')[1]?.trim() || '';
+    let { image = '', path = '', wl = '' } = query;
+    if (wl === 'true') {
+      path = `${WL_PUBLIC_URL}/upload/`;
+    } else {
+      if (path.trim().startsWith('http')) {
+        path = path.split('://')[1]?.trim() || '';
+      }
+      path = path.trim() ? `https://${path.trim()}/` : '';
     }
-    path = path.trim() ? `https://${path.trim()}/` : '';
     const noImage = /*html*/ `<span style="color:blue;font-size:18px;font-weight:bold;">No Image</span>`;
     let img = noImage;
     if (image.trim()) {
@@ -363,10 +356,13 @@ const app = new Elysia({
   })
   // Fetch the external image
   .get('/blob/image', async ({ query, set }) => {
-    const { url } = query;
+    let { url, wl } = query;
     try {
       if (!url?.trim()) {
         throw new Error('Image URL is require.');
+      }
+      if (wl === 'true') {
+        url = `${WL_PUBLIC_URL}/upload/${url}`;
       }
       const response = await fetch(url);
       if (!response.ok) {
@@ -374,6 +370,12 @@ const app = new Elysia({
         return 'Failed to fetch image from external source.';
       }
       const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+      console.log(
+        'contentType',
+        contentType,
+        '===',
+        response.headers.get('content-type')
+      );
       set.headers['Content-Type'] = contentType;
 
       return response.arrayBuffer();

@@ -9,3 +9,8 @@ export const PUBLIC_URL = VERCEL_PUBLIC_URL
 
 export const TOKEN = process.env.BOT_TOKEN;
 export const WEB_APP_URL = process.env.WEB_APP_URL;
+
+export const WL_PUBLIC_URL = process.env.WL_PUBLIC_URL;
+export const WL_PRIVATE_API_PATH = process.env.WL_PRIVATE_API_PATH;
+export const WL_PRIVATE_API = `${WL_PUBLIC_URL}${WL_PRIVATE_API_PATH}`;
+export const WL_COOKIE = process.env.WL_COOKIE;

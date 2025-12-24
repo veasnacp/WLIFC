@@ -1,4 +1,8 @@
-import { removeDuplicateArray, removeDuplicateObjArray } from '../utils/is';
+import {
+  isObject,
+  removeDuplicateArray,
+  removeDuplicateObjArray,
+} from '../utils/is';
 import { Data } from './types';
 
 type MediaType = {
@@ -43,6 +47,15 @@ export class WLLogistic {
     const pid = id ? `&pid=${id}` : '';
     return `${process.env.WL_PUBLIC_URL}/index.php/admin/order/warehouse?do=list&spot_id=1000&spot_code=JPZ&page=1&limit=10&logcode=${this._currentLogCode}&mark_name=&goods_name=&date=&sub_type=&container_num=${pid}&status=0`;
   }
+  async getFirstData() {
+    const res = await fetch(this.apiUrlLogCode(), {
+      headers: this.headers,
+      body: null,
+      method: 'GET',
+    });
+    const dataList = (await res.json()).data as Array<Data> | { url: string };
+    return dataList;
+  }
   /**
    * Get id from pid
    * @returns number or string
@@ -56,12 +69,16 @@ export class WLLogistic {
       this._currentLogCode = logCode;
     }
     try {
-      const res = await fetch(this.apiUrlLogCode(), {
-        headers: this.headers,
-        body: null,
-        method: 'GET',
-      });
-      const dataList = (await res.json()).data as Array<Data>;
+      const dataList = await this.getFirstData();
+      if (isObject(dataList) && 'url' in dataList) {
+        return {
+          message: 'not found',
+          path: dataList.url as string,
+          requireLogin: true,
+        } as const;
+      } else if (dataList.length === 0) {
+        return { message: 'not found' } as const;
+      }
       const data_0 =
         showAllSmallPackage || isSubLogCode
           ? dataList[0]

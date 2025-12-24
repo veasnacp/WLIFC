@@ -1,0 +1,7 @@
+export const STICKER_ID = {
+  working:
+    'CAACAgUAAxkBAAIgzGlL9PbFH4PJshCxXN7Wbwcp2kPBAAKtAgACVTmgVtU_JvRvDSVYNgQ',
+  busy: 'CAACAgUAAxkBAAIg3mlL-QSLxKEhRKwQ3G3rtJ3hH0-RAALeAgACS-cZV9rybgbSVpktNgQ',
+  okByRabbit:
+    'CAACAgIAAxkBAAIgzmlL9gn32PKaZn717h8AAd9D9J0DjAACcgUAAj-VzAoR4VZdHmW_cDYE',
+};
