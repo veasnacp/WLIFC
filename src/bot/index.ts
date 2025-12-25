@@ -486,6 +486,7 @@ export async function ShowDataMessageAndPhotos(
                   .split('<br>')
                   .filter(Boolean)
                   .map((v) => {
+                    v = v.includes('=') ? v.split('=')[0] : v;
                     const total = v
                       .split('x')
                       .reduce((acc, p) => acc * Number(p), 1);
@@ -547,8 +548,11 @@ export async function ShowDataMessageAndPhotos(
 
     await showMoreCaption();
     // Delete the temporary loading message
-    if (loadingMsgId) await bot.deleteMessage(chatId, loadingMsgId);
-    return;
+    if (loadingMsgId) {
+      await bot.deleteMessage(chatId, loadingMsgId);
+      options.loadingMsgId = undefined;
+    }
+    return { noImage: true };
   }
 
   let errorMessageId: number | undefined;
@@ -831,7 +835,7 @@ export async function onTextNumberAction(
         data = wl_data;
       }
     }
-    await ShowDataMessageAndPhotos(bot, chat, data, wl, {
+    const showData = await ShowDataMessageAndPhotos(bot, chat, data, wl, {
       logCode,
       isTrackingNumber,
       hasSubLogCodeCache,
@@ -841,7 +845,10 @@ export async function onTextNumberAction(
       loadingMsgId,
       withMore: options?.withMore,
     });
-    await bot.deleteMessage(chatId, loadingMsgId);
+    if (showData?.noImage) return;
+    if (loadingMsgId) {
+      await bot.deleteMessage(chatId, loadingMsgId);
+    }
   } catch (error) {
     console.error(
       'Error in image generation process:',
