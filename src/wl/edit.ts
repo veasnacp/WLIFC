@@ -15,6 +15,7 @@ export type DataExpand = Data & {
   isSmallPackage?: boolean;
   smallPackageGoodsNames?: string[];
   subLogCodes?: string[];
+  tryToLoadImage?: boolean;
 };
 
 export class WLLogistic {
@@ -230,10 +231,9 @@ export class WLLogistic {
                             `- ម៉ែត្រគូបផ្សេងគ្នា: ${
                               d.volume_record
                                 ?.replace(/\<br\>/, '')
-                                .replace(/\<br\>/g, ',') || 'N/A'
+                                .replace(/\<br\>/g, ' ,') || 'N/A'
                             }\n`,
-                            more(),
-                            '\n\n\n...'
+                            more()
                           )
                           .substring(0, 1024);
                         medias.push({
