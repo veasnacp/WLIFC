@@ -695,7 +695,6 @@ export async function onTextNumberAction(
   let loadingMsgId;
 
   try {
-    const IS_DEV = false;
     globalLogCode = logCode;
     const loadingMessage = await bot.sendMessage(
       chatId,
@@ -707,10 +706,6 @@ export async function onTextNumberAction(
           : {
               inline_keyboard: [
                 [
-                  {
-                    text: '🔄 Refresh',
-                    callback_data: 'refresh_webhook',
-                  },
                   {
                     text: `Open ${logCode}`,
                     web_app: {

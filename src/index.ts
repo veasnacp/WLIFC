@@ -204,7 +204,7 @@ const app = new Elysia({
       const user = JSON.parse(urlParams.get('user') || '{}');
       const chatId = user.id;
 
-      if (message === 'not found') {
+      if (message !== 'successful') {
         await bot.sendMessage(chatId, `សូមព្យាយាមម្តងទៀត។`);
         return { success: true };
       }
