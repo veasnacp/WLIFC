@@ -1292,7 +1292,7 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                       {
                         text: 'Set Webhook',
                         web_app: {
-                          url: `${PUBLIC_URL}api/set-webhook?user=${
+                          url: `${PUBLIC_URL}/api/set-webhook?user=${
                             ADMIN_LIST?.split(',')?.[0]
                           }`,
                         },
