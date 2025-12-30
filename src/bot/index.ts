@@ -277,6 +277,10 @@ type OnTextNumberActionOptions = {
   withMore: boolean;
   showAllSmallPackage: boolean;
   isSubLogCode: boolean;
+  isNearToNewLogCode: boolean;
+  isTrackingNumber: boolean;
+  isNewLogCode: boolean;
+  isOldLogCode: boolean;
 };
 
 export const getFullname = (chat: TelegramBot.Chat) => {
@@ -385,34 +389,36 @@ export function getValidationOptions(
   bot?: TelegramBot,
   chatId?: TelegramBot.ChatId
 ) {
-  const options = {} as Partial<OnTextNumberActionOptions>;
-  const isValidStartsWith = logCode.startsWith('25');
+  const isNearToNewLogCode = logCode.startsWith('24');
+  const isTrackingNumber = !logCode.startsWith('25');
+  const isNewLogCode = !isTrackingNumber && logCode.length === 12;
   const isOldLogCode = logCode.startsWith('1757');
-  const isValidSmallPackageOrTrackingLogCode = isOldLogCode
-    ? logCode.length === 10
-    : logCode.length >= 12 && logCode.length <= 16;
-  if (
-    !isValidStartsWith ||
-    (isValidStartsWith && logCode.length !== '251209180405'.length)
-  ) {
-    if (!isValidSmallPackageOrTrackingLogCode) {
-      if (bot && chatId) {
-        bot.sendMessage(
-          chatId,
-          'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
-            isOldLogCode
-              ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
-              : '',
-            '❌ Sorry, invalid code. Please try again.'
-          )
-        );
-        return;
-      }
-    } else {
-      options.isSubLogCode = true;
+  const isSubLogCode =
+    isTrackingNumber && logCode.length >= 12 && logCode.length <= 16;
+  const isValidLogCode = isTrackingNumber
+    ? logCode.length >= 12 && logCode.length <= 16
+    : isNewLogCode;
+  const options = {
+    isNearToNewLogCode,
+    isTrackingNumber: isTrackingNumber && !isNearToNewLogCode,
+    isNewLogCode,
+    isOldLogCode,
+    isSubLogCode,
+  } as Partial<OnTextNumberActionOptions>;
+  if (isNearToNewLogCode || !isValidLogCode) {
+    if (bot && chatId) {
+      bot.sendMessage(
+        chatId,
+        'នែ៎ៗៗ! លេខបុងមិនត្រឹមត្រូវទេ។ សូមបញ្ចូលម្តងទៀត។\n'.concat(
+          isOldLogCode || isNearToNewLogCode
+            ? 'លេខបុងប្រភេទនេះមិនទាន់បញ្ចូលទិន្នន័យទេ សូមប្រើលេខបុងដែលចាប់ផ្តើមពីលេខ25\n'
+            : '',
+          '❌ Sorry, invalid code. Please try again.'
+        )
+      );
+      return 'Invalid code';
     }
   }
-
   return options;
 }
 export async function ShowDataMessageAndPhotos(
@@ -467,9 +473,11 @@ export async function ShowDataMessageAndPhotos(
             DATA = DATA.slice(dataLength - 50, dataLength - 1);
           }
           if (dataLength > 0)
-            fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
-              encoding: 'utf-8',
-            });
+            try {
+              fs.writeFileSync(fileData, JSON.stringify(DATA, null, 2), {
+                encoding: 'utf-8',
+              });
+            } catch {}
         }
       }
     }
@@ -699,7 +707,11 @@ export async function onTextNumberAction(
               inline_keyboard: [
                 [
                   {
-                    text: 'Open',
+                    text: '🔄 Refresh',
+                    callback_data: 'refresh_webhook',
+                  },
+                  {
+                    text: `Open ${logCode}`,
                     web_app: {
                       url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html`,
                     },
@@ -1028,6 +1040,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
     cookie = !cookie.startsWith('PHPSESSID=')
       ? 'PHPSESSID='.concat(cookie)
       : cookie;
+    if (!IS_DEV) {
+      fetch(`${PUBLIC_URL}/wl/set-cookie?cookie=${cookie}`).catch();
+    }
     config.set('cookie', cookie);
     await bot.sendMessage(
       chatId,
@@ -1043,15 +1058,15 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
       };
       const dataList = await wl.getFirstData();
       const isRequireLogin = isObject(dataList) && 'url' in dataList;
+      if (!isRequireLogin && isArray(dataList)) {
+        config.set('status', 'active');
+      }
       await bot.sendMessage(
         chatId,
         isRequireLogin
           ? 'Login is requires.'
           : `✅ Successfully testing data(dataList.length = ${dataList.length})`
       );
-      if (!isRequireLogin && isArray(dataList)) {
-        config.set('status', 'active');
-      }
     }
   };
   bot.onText(/\/setCookie/, async (msg) => {
@@ -1268,6 +1283,22 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
                 [...adminInlineKeyboardButtons.slice(0, 3)],
                 [...adminInlineKeyboardButtons.slice(3, 6)],
                 [...adminInlineKeyboardButtons.slice(6)],
+                !IS_DEV
+                  ? [
+                      {
+                        text: 'Open Webhook Info',
+                        web_app: { url: `${PUBLIC_URL}/api/webhook-info` },
+                      },
+                      {
+                        text: 'Set Webhook',
+                        web_app: {
+                          url: `${PUBLIC_URL}api/set-webhook?user=${
+                            ADMIN_LIST?.split(',')?.[0]
+                          }`,
+                        },
+                      },
+                    ]
+                  : [],
               ],
             },
           }
@@ -1415,6 +1446,9 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
           await bot.sendMessage(chatId, statusMessage[status], {
             parse_mode: 'Markdown',
           });
+        } else if (action?.startsWith('refresh_webhook')) {
+          fetch(`${PUBLIC_URL}/api/webhook-info`).catch();
+          bot.sendMessage(chatId, 'សូមមេត្តារងចាំបន្តិច...');
         } else {
           switch (action as AdminInlineKeyboardAction) {
             case 'getLogCodes':
@@ -1500,12 +1534,15 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
   });
 
   bot.onText(integerRegExp, async (msg, match) => {
-    if (!match) {
+    const logCode = match?.[0]?.trim();
+    if (!logCode) {
       bot.sendMessage(msg.chat.id, '❌ Sorry, invalid Code. Please try again.');
       return;
     }
-    const logCode = msg.text?.trim() || '';
     const options = getValidationOptions(logCode, bot, msg.chat.id);
+    if (typeof options === 'string') {
+      return;
+    }
     await onTextNumberAction(bot, msg, logCode, options);
   });
 

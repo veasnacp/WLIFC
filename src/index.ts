@@ -197,30 +197,28 @@ const app = new Elysia({
         return { success: false, error: 'Invalid data source' };
       }
 
-      // 2. Extract user ID from initData
       const urlParams = new URLSearchParams(initData);
       const user = JSON.parse(urlParams.get('user') || '{}');
-      console.log(user);
       const chatId = user.id;
 
       if (logCode)
         try {
-          const isTrackingNumber = !logCode.startsWith('25');
           const asMemberContainerController =
             isMemberAsContainerController(user);
           const data = JSON.parse(result);
           const wl = new WLLogistic(logCode);
-          // await bot.sendMessage(chatId, data.message);
           // 3. Send message to Telegram chat
           const options = getValidationOptions(logCode, bot, chatId);
-          await ShowDataMessageAndPhotos(bot, user, data, wl, {
-            logCode,
-            isTrackingNumber,
-            hasSubLogCodeCache: options?.isSubLogCode,
-            asMemberContainerController,
-            // loadingMsgId,
-            // withMore,
-          });
+          if (typeof options === 'object') {
+            await ShowDataMessageAndPhotos(bot, user, data, wl, {
+              logCode,
+              isTrackingNumber: !!options.isTrackingNumber,
+              hasSubLogCodeCache: options?.isSubLogCode,
+              asMemberContainerController,
+              // loadingMsgId,
+              // withMore,
+            });
+          }
         } catch (error: any) {
           console.log(error.message);
         }
@@ -239,6 +237,16 @@ const app = new Elysia({
   })
   .get('/favicon.ico', () => file('./public/favicon.ico'))
   .get('/bot.js', () => file('./public/bot.js'))
+  .get('/wl/set-cookie', async ({ query, set }) => {
+    set.status = 200;
+    let cookie = query.cookie || '';
+    const hasCookie = Boolean(cookie);
+    cookie = !cookie.startsWith('PHPSESSID=')
+      ? 'PHPSESSID='.concat(cookie)
+      : cookie;
+    if (hasCookie) config.set('cookie', cookie);
+    return { success: true, hasCookie };
+  })
   .get('/wl/*', async ({ params, query, set }) => {
     set.status = 200;
     if (query.web === 'html') {
