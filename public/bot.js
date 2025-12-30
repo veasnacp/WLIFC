@@ -37,13 +37,16 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 var dataJson;
 window.setUpTelegramWebApp = function () {
     return __awaiter(this, void 0, void 0, function () {
-        var path, tg, res, data, error_1;
+        var path, search, tg, params, message_id, res, data, error_1;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
                     path = window.location.pathname;
+                    search = window.location.search;
                     if (!(path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp)) return [3 /*break*/, 7];
                     tg = window.Telegram.WebApp;
+                    params = new URLSearchParams(search);
+                    message_id = params.get('message_id');
                     _a.label = 1;
                 case 1:
                     _a.trys.push([1, 5, , 6]);
@@ -64,6 +67,8 @@ window.setUpTelegramWebApp = function () {
                                 initData: tg.initData,
                                 logCode: path.split('/').at(-1),
                                 result: JSON.stringify(data.data),
+                                message_id: message_id,
+                                message: data.message,
                             }),
                         })];
                 case 4:

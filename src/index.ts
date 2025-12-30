@@ -189,7 +189,10 @@ const app = new Elysia({
   .post(
     '/api/submit-app-data',
     async ({ body, set }) => {
-      const { initData, result, logCode } = body;
+      let { initData, result, logCode, message_id, message } = body;
+      message_id = isNumber(message_id)
+        ? Number(message_id)
+        : new Date().getTime();
       set.status = 200;
 
       // 1. Security Check
@@ -201,6 +204,10 @@ const app = new Elysia({
       const user = JSON.parse(urlParams.get('user') || '{}');
       const chatId = user.id;
 
+      if (message === 'not found') {
+        await bot.sendMessage(chatId, `សូមព្យាយាមម្តងទៀត។`);
+        return { success: true };
+      }
       if (logCode)
         try {
           const asMemberContainerController =
@@ -210,17 +217,23 @@ const app = new Elysia({
           // 3. Send message to Telegram chat
           const options = getValidationOptions(logCode, bot, chatId);
           if (typeof options === 'object') {
-            await ShowDataMessageAndPhotos(bot, user, data, wl, {
-              logCode,
-              isTrackingNumber: !!options.isTrackingNumber,
-              hasSubLogCodeCache: options?.isSubLogCode,
-              asMemberContainerController,
-              // loadingMsgId,
-              // withMore,
-            });
+            await ShowDataMessageAndPhotos(
+              bot,
+              { chat: user, message_id: Number(message_id) } as any,
+              data,
+              wl,
+              {
+                logCode,
+                isTrackingNumber: !!options.isTrackingNumber,
+                hasSubLogCodeCache: options?.isSubLogCode,
+                asMemberContainerController,
+                // loadingMsgId,
+                // withMore,
+              }
+            );
           }
         } catch (error: any) {
-          console.log(error.message);
+          console.error(error.message);
         }
       else {
         await bot.sendMessage(chatId, `Code is require.`);

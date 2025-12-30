@@ -11,8 +11,11 @@ type DT = {
 var dataJson: DT | undefined;
 window.setUpTelegramWebApp = async function () {
   const path = window.location.pathname;
+  const search = window.location.search;
   if (path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp) {
     const tg = window.Telegram.WebApp;
+    const params = new URLSearchParams(search);
+    const message_id = params.get('message_id');
     try {
       const res = await fetch(path, {
         method: 'GET',
@@ -27,6 +30,8 @@ window.setUpTelegramWebApp = async function () {
           initData: tg.initData,
           logCode: path.split('/').at(-1),
           result: JSON.stringify(data.data),
+          message_id,
+          message: data.message,
         }),
       });
       tg.close();

@@ -695,14 +695,11 @@ export async function onTextNumberAction(
   let loadingMsgId;
 
   try {
-    if (!IS_DEV) {
-      bot.getWebHookInfo();
-    }
+    const IS_DEV = false;
     globalLogCode = logCode;
     const loadingMessage = await bot.sendMessage(
       chatId,
-      // IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
-      LOADING_TEXT,
+      IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
       {
         parse_mode: 'Markdown',
         reply_markup: IS_DEV
@@ -717,7 +714,7 @@ export async function onTextNumberAction(
                   {
                     text: `Open ${logCode}`,
                     web_app: {
-                      url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html`,
+                      url: `${PUBLIC_URL}/wl/${globalLogCode}?web=html&message_id=${msg.message_id}`,
                     },
                   },
                 ],
@@ -726,12 +723,9 @@ export async function onTextNumberAction(
             },
       }
     );
-    if (!IS_DEV) {
-      bot.getWebHookInfo();
-    }
 
     loadingMsgId = loadingMessage.message_id;
-    // if (!IS_DEV) return;
+    if (!IS_DEV) return;
 
     // THE AWAITED LONG-RUNNING OPERATION ---
     const cookie =
