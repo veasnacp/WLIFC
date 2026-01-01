@@ -26,6 +26,7 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import { STICKER_ID } from './sticker';
+import { broadcastByFileId } from './notifications';
 // import chalk from 'chalk';
 
 export const WL_MEMBERS_LIST = process.env.WL_MEMBERS_LIST;
@@ -1326,6 +1327,16 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         .catch();
     }
   });
+  bot.onText(/\/noti/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    if (isAdmin(msg.chat)) {
+      await broadcastByFileId(
+        bot,
+        activeUserMap
+        // Number(process.env.ADMIN_ID?.split(',')[0])
+      );
+    }
+  });
 
   bot.on('callback_query', async function onCallbackQuery(query) {
     const action = query.data;
@@ -1651,6 +1662,20 @@ export function runBot(bot: TelegramBot, { webAppUrl }: { webAppUrl: string }) {
         `The ID for this sticker is:\n\`${stickerId}\``,
         { parse_mode: 'Markdown' }
       );
+    }
+  });
+  bot.on('animation', (msg) => {
+    const fileId = msg.animation?.file_id;
+    const fileUniqueId = msg.animation?.file_unique_id;
+
+    if (fileId) {
+      console.log(`✅ Received GIF!`);
+      console.log(`File ID: ${fileId}`);
+      console.log(`File Unique ID: ${fileUniqueId}`);
+      // You can now save this fileId to your Map or Database
+      bot.sendMessage(msg.chat.id, `Got it! The file_id is: \`${fileId}\``, {
+        parse_mode: 'Markdown',
+      });
     }
   });
 
