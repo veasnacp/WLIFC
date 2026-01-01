@@ -7,37 +7,19 @@ import { DataExpand, WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
 import {
-  cacheData,
-  config,
-  getValidationOptions,
-  isMemberAsContainerController,
-  runBot,
-  ShowDataMessageAndPhotos,
-} from './bot';
-import {
   IS_DEV,
+  NODE_ENV,
   PORT,
   PUBLIC_URL,
   TOKEN,
-  WEB_APP_URL,
   WL_PUBLIC_URL,
 } from './config/constants';
+import { setupBot, WLCheckerBot } from './bot/start';
 
-const NODE_ENV = process.env.NODE_ENV;
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
-const webAppUrl = WEB_APP_URL;
 
-if (!TOKEN || !webAppUrl) {
-  throw new Error(
-    'BOT_TOKEN and WEB_APP_URL must be defined in the .env file.'
-  );
-}
-
-// Initialize Telegram Bot
-const bot = new TelegramBot(
-  TOKEN,
-  IS_DEV ? { polling: true } : { webHook: true, polling: false }
-);
+const bot = setupBot();
+const wlb = new WLCheckerBot(bot);
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -210,15 +192,13 @@ const app = new Elysia({
       }
       if (logCode)
         try {
-          const asMemberContainerController =
-            isMemberAsContainerController(user);
           const data = JSON.parse(result);
           const wl = new WLLogistic(logCode);
           // 3. Send message to Telegram chat
-          const options = getValidationOptions(logCode, bot, chatId);
+          const options = wlb.getValidationLogCodeOptions(logCode, chatId);
           if (typeof options === 'object') {
-            await ShowDataMessageAndPhotos(
-              bot,
+            wlb.refreshTypeMember(user);
+            await wlb.showDataMessageAndPhotos(
               { chat: user, message_id: Number(message_id) } as any,
               data,
               wl,
@@ -226,7 +206,6 @@ const app = new Elysia({
                 logCode,
                 isTrackingNumber: !!options.isTrackingNumber,
                 hasSubLogCodeCache: options?.isSubLogCode,
-                asMemberContainerController,
                 // loadingMsgId,
                 // withMore,
               }
@@ -257,7 +236,10 @@ const app = new Elysia({
     cookie = !cookie.startsWith('PHPSESSID=')
       ? 'PHPSESSID='.concat(cookie)
       : cookie;
-    if (hasCookie) config.set('cookie', cookie);
+    if (hasCookie) {
+      wlb.wl_cookie = cookie;
+      wlb.config.set('cookie', cookie);
+    }
     return { success: true, hasCookie };
   })
   .get('/wl/*', async ({ params, query, set }) => {
@@ -280,15 +262,15 @@ const app = new Elysia({
     const showAllSmallPackage = query.showAll === 'true';
     const isSubLogCode =
       isTrackingNumber && !isValidSmallPackageOrTrackingLogCode;
-    const cookie = config.get('cookie') || process.env.WL_COOKIE || '';
+    const cookie = wlb.config.get('cookie') || process.env.WL_COOKIE || '';
     const wl = new WLLogistic(logCode, cookie);
 
     let data: DataExpand | undefined;
     let _logCode = logCode;
 
-    const _data = cacheData.get(_logCode) as typeof data;
+    const _data = wlb.cacheDataMap.get(_logCode) as typeof data;
     if (!_data && !isTrackingNumber) {
-      data = cacheData.values().find((d) => {
+      data = wlb.cacheDataMap.values().find((d) => {
         if (d.logcode === logCode) {
           _logCode = d.logcode;
         }
@@ -309,7 +291,7 @@ const app = new Elysia({
         refetchData = true;
       }
     } else if (isSubLogCode) {
-      const _data = [...cacheData.values()].find((d) =>
+      const _data = [...wlb.cacheDataMap.values()].find((d) =>
         d.sub_logcode?.includes(logCode)
       );
       if (_data && !('message' in _data)) {
@@ -431,6 +413,7 @@ if (IS_DEV) {
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   });
 }
-runBot(bot, { webAppUrl });
+
+wlb.start();
 
 export default app;
