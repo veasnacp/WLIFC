@@ -399,11 +399,14 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     return await this.bot.sendMessage(
       chat.id,
       fullCaption,
-      sendMessageOptions({
-        translateText: logCodeFromCommand,
-        logCodeOrAndForShowMore: `${logCodeFromCommand}|${messageIdShowMore}`,
-        chat,
-      })
+      sendMessageOptions(
+        {
+          translateText: logCodeFromCommand,
+          logCodeOrAndForShowMore: `${logCodeFromCommand}|${messageIdShowMore}`,
+          chat,
+        },
+        this.asAdmin
+      )
     );
   }
   async showMoreDataCaption(
@@ -698,7 +701,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       data,
       media
     );
-    other.messageIdShowMore = messageIdShowMore;
+    messageIdShowMore = other.messageIdShowMore || messageIdShowMore;
     if (fullCaption)
       await this.sendFullCaption(chat, fullCaption, logCode, messageIdShowMore);
     this.saveCacheData(data, hasSubLogCodeCache);
@@ -745,7 +748,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let loadingMsgId;
 
     try {
-      const IS_DEV = false;
+      // const IS_DEV = false;
       const loadingMessage = await bot.sendMessage(
         chatId,
         IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
