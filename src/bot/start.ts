@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { MAX_TEXT_LENGTH, WLCheckerBotSendData } from './preload-bot';
-import type { ConfigCache, MapConfig } from './types';
+import type { ActiveUserData, ConfigCache, MapConfig } from './types';
 import {
   ADMIN_LIST,
   IS_DEV,
@@ -20,6 +20,7 @@ import {
 import { broadcastByFileId } from './notifications';
 import translate from '@iamtraction/google-translate';
 import { Jimp } from 'jimp';
+import { logger } from '../utils/logger';
 import {
   BarcodeFormat,
   BinaryBitmap,
@@ -28,6 +29,7 @@ import {
   MultiFormatReader,
   RGBLuminanceSource,
 } from '@zxing/library';
+import dayjs from 'dayjs';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -58,6 +60,9 @@ export const configUserWithAdminPermission = async (
           case 'WL_MEMBERS_LIST':
             addedMessage = 'បានចូលជាសមាជិកពេញសិទ្ធិ។';
             break;
+          case 'WL_ALLOWED_MEMBERS':
+            addedMessage = 'បានចូលជាសមាជិកក្នុងបេសកកម្មរុករកអីវ៉ាន់ហើយ។';
+            break;
           case 'bannedUsers':
             addedMessage = 'added to ban list.';
             break;
@@ -78,6 +83,9 @@ export const configUserWithAdminPermission = async (
         switch (options.key) {
           case 'WL_MEMBERS_LIST':
             removedMessage = 'បានដកចេញពីសមាជិកពេញសិទ្ធិ។';
+            break;
+          case 'WL_ALLOWED_MEMBERS':
+            removedMessage = 'បានដកចេញពីសមាជិកបេសកកម្មរុករកអីវ៉ាន់ហើយ។';
             break;
           case 'bannedUsers':
             removedMessage = 'removed from ban list.';
@@ -140,7 +148,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
   commandsAdmin = [
     { command: 'start', description: 'Start the bot' },
     { command: 'settings', description: 'Show all button actions' },
-    { command: 'setCookie', description: 'Set new cookie' },
+    { command: 'set_cookie', description: 'Set new cookie' },
   ];
   constructor(bot: TelegramBot) {
     super(bot);
@@ -185,16 +193,23 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       }
     });
   }
-  async setMenuCommands(text?: string) {
-    return this.bot
-      .setMyCommands(
-        ['off', 'hidden', 'disable'].some((t) => t === text)
-          ? []
-          : this.commandsAdmin
-      )
-      .then(() => {
-        console.log('Command menu updated successfully');
-      });
+  async setMenuCommands(chatId: number, text?: string) {
+    try {
+      return await this.bot
+        .setMyCommands(
+          ['off', 'hidden', 'disable'].some((t) => t === text)
+            ? []
+            : this.commandsAdmin,
+          {
+            scope: { type: 'chat', chat_id: chatId },
+          }
+        )
+        .then(() => {
+          console.log('Command menu updated successfully');
+        });
+    } catch (error: any) {
+      console.error('[set command]', error.message);
+    }
   }
   async setCookie(
     chatId: TelegramBot.ChatId,
@@ -260,6 +275,14 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       key: 'CONTAINER_CONTROLLER_LIST',
       type: 'remove',
     });
+    this.onTextConfigUserWithAdminPermission(/\/addEmployee (.+)/, {
+      key: 'WL_ALLOWED_MEMBERS',
+      type: 'add',
+    });
+    this.onTextConfigUserWithAdminPermission(/\/removeEmployee (.+)/, {
+      key: 'WL_ALLOWED_MEMBERS',
+      type: 'remove',
+    });
     this.onTextConfigUserWithAdminPermission(/\/addBanUser (.+)/, {
       key: 'bannedUsers',
       type: 'add',
@@ -272,15 +295,63 @@ export class WLCheckerBot extends WLCheckerBotSendData {
   async getConfigUsers(msg: TelegramBot.Message) {
     const chatId = msg.chat.id;
     if (this.asAdmin) {
-      const data = Array.from(this.config.entries())
-        .filter(([_, v]) => Array.isArray(v))
-        .map(
-          ([k, v]) =>
-            `=== ✅ ${k.toUpperCase()} ✅ ===\n${(v as string[]).join(', ')}`
-        )
+      const adminUsers = this.adminUsers;
+      const editorUsers = this.editorUsers;
+      const controllerUsers = this.controllerUsers;
+      const employeeUsers = this.employeeUsers;
+
+      const users = this.activeUserMap.entries().reduce(
+        (acc, [id, user]) => {
+          const { fullname = '', username, fullnameWithUsername } = user;
+          let user_str = username
+            ? `@${username}`
+            : `<a href="tg://user?id=${id}">${
+                fullname || fullnameWithUsername
+              }</a>`;
+          const fwu = fullname || username || fullnameWithUsername;
+          if (user.banned) {
+            acc.banned_users.push(user_str);
+          } else if (
+            controllerUsers.includes(`${id}`) ||
+            controllerUsers.includes(fwu)
+          ) {
+            acc.controller_users.push(user_str);
+          } else if (
+            employeeUsers.includes(`${id}`) ||
+            employeeUsers.includes(fwu)
+          ) {
+            acc.employee_users.push(user_str);
+          }
+          if (editorUsers.includes(`${id}`) || editorUsers.includes(fwu)) {
+            acc.editor_users.push(user_str);
+          }
+          return acc;
+        },
+        {
+          admin_users: adminUsers as string[],
+          editor_users: [] as string[],
+          controller_users: [] as string[],
+          employee_users: [] as string[],
+          banned_users: [] as string[],
+        }
+      );
+
+      let msg_data = Object.entries(users)
+        .map(([key, value]) => {
+          return `✅ ${key.replace('_', ' ').toUpperCase()}\n`.concat(
+            value.join('\n')
+          );
+        })
         .join('\n\n')
+        .concat(`\nCookie: <code>${this.wl_cookie.split('=')[1]}</code>`)
         .substring(0, MAX_TEXT_LENGTH);
-      await this.bot.sendMessage(chatId, data).catch();
+
+      await this.bot
+        .sendMessage(chatId, msg_data, {
+          reply_to_message_id: msg.message_id,
+          parse_mode: 'HTML',
+        })
+        .catch();
     }
   }
   async getActiveUsers(msg: TelegramBot.Message) {
@@ -304,6 +375,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                 ),
               }
             : undefined,
+          reply_to_message_id: msg.message_id,
         })
         .catch();
     }
@@ -317,7 +389,9 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         fs.unlinkSync(this.fileData);
       }
     }
-    await this.bot.sendMessage(chatId, '✅ Successfully data reset');
+    await this.bot.sendMessage(chatId, '✅ Successfully data reset', {
+      reply_to_message_id: msg.message_id,
+    });
   }
   clearAll(msg: TelegramBot.Message) {
     const chatId = msg.chat.id;
@@ -345,7 +419,9 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           }
         });
       }
-      this.bot.sendMessage(chatId, message);
+      this.bot.sendMessage(chatId, message, {
+        reply_to_message_id: msg.message_id,
+      });
     } catch (error) {
       console.error('Error sending clear message:', (error as Error).message);
     }
@@ -365,7 +441,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             )
             .join('\n')
             .substring(0, MAX_TEXT_LENGTH)
-        : 'No LogCodes'
+        : 'No LogCodes',
+      {
+        reply_to_message_id: msg.message_id,
+      }
     );
   }
   async getLogging(msg: TelegramBot.Message) {
@@ -374,20 +453,25 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       Array.isArray(u.logging)
     );
     try {
+      const today = dayjs().format('YYYY-MM-DD');
       await this.bot.sendMessage(
         chatId,
         activeUsers.length
           ? activeUsers
               .map(
                 (u) =>
-                  `🧑 <b>${u.fullnameWithUsername}</b>\n ${u.logging?.slice(
-                    -10
-                  )}`
+                  `🧑 <b>${u.fullnameWithUsername}</b>\n ${u.logging
+                    ?.slice(-10)
+                    .join('\n')
+                    .replaceAll(today, 'TODAY')}`
               )
               .join('\n')
               .substring(0, MAX_TEXT_LENGTH)
           : 'Nobody actives today.',
-        sendMessageOptions({ parse_mode: 'HTML' })
+        sendMessageOptions({
+          parse_mode: 'HTML',
+          reply_to_message_id: msg.message_id,
+        })
       );
     } catch {}
   }
@@ -409,6 +493,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                 2
               ),
             },
+            reply_to_message_id: msg.message_id,
           }
         )
         .catch();
@@ -538,6 +623,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             );
           } else if (action?.startsWith('user_info_')) {
             const userId = action.replace('user_info_', '');
+            // console.log([...this.activeUserMap.keys()].join(','));
             if (isNumber(userId)) {
               const id = Number(userId);
               const member = this.activeUserMap.get(id);
@@ -545,43 +631,62 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                 const logging = member.logging || [];
                 member.id = `<code>${id}</code>`;
                 delete member.logging;
+                const today = dayjs().format('YYYY-MM-DD');
                 await this.bot.sendMessage(
                   chatId,
                   JSON.stringify(member, null, 2) +
-                    `\n\n<b>Logging:</b>\n${logging.join('\n')}`,
+                    `\n\n<b>Logging:</b>\n${logging
+                      .join('\n')
+                      .replaceAll(today, 'TODAY')}`,
                   {
                     parse_mode: 'HTML',
+                    reply_to_message_id: msg.message_id,
                     reply_markup: {
                       inline_keyboard: [
-                        [
-                          {
-                            text: 'Ban',
-                            callback_data: 'ban_user_'.concat(userId),
-                          },
-                          {
-                            text: 'Remove Ban',
-                            callback_data: 'remove_ban_user_'.concat(userId),
-                          },
-                        ],
+                        ...['Allow', 'Ban'].map((type) => {
+                          let removeText = type;
+                          if (type === 'Allow') {
+                            removeText = 'Disallow';
+                          } else {
+                            removeText = 'Remove '.concat(type);
+                          }
+                          return [
+                            {
+                              text: type,
+                              callback_data: 'edit_user_'.concat(
+                                type.toLowerCase(),
+                                '|',
+                                userId
+                              ),
+                            },
+                            {
+                              text: removeText,
+                              callback_data: 'edit_user_remove_'.concat(
+                                type.toLowerCase(),
+                                '|',
+                                userId
+                              ),
+                            },
+                          ];
+                        }),
                       ],
                     },
                   }
                 );
               }
             }
-          } else if (
-            action?.startsWith('ban_user_') ||
-            action?.startsWith('remove_ban_user_')
-          ) {
-            const userId = action.split('ban_user_')[1];
+          } else if (action?.startsWith('edit_user_')) {
+            const [_action, userId] = action.split('|');
             if (isNumber(userId)) {
               await configUserWithAdminPermission(
                 this.bot,
                 msg,
                 this.config,
                 {
-                  key: 'bannedUsers',
-                  type: action.startsWith('remove') ? 'remove' : 'add',
+                  key: action.includes('ban')
+                    ? 'bannedUsers'
+                    : 'WL_ALLOWED_MEMBERS',
+                  type: action.includes('remove') ? 'remove' : 'add',
                   id_username_or_first_name: userId,
                 },
                 this.asAdmin
@@ -641,7 +746,21 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     bot.onText(/\/menu (.+)/, (msg, match) => {
       const chatId = msg.chat.id;
       const text = match?.[1].trim().toLowerCase();
-      if (this.asAdmin) this.setMenuCommands(text);
+      if (this.asAdmin) this.setMenuCommands(chatId, text);
+      else {
+        this.alertNoPermissionMessage(chatId);
+      }
+    });
+    bot.onText(/\/show_menu/, (msg) => {
+      const chatId = msg.chat.id;
+      if (this.asAdmin) this.setMenuCommands(chatId, 'on');
+      else {
+        this.alertNoPermissionMessage(chatId);
+      }
+    });
+    bot.onText(/\/remove_menu/, (msg) => {
+      const chatId = msg.chat.id;
+      if (this.asAdmin) this.setMenuCommands(chatId, 'off');
       else {
         this.alertNoPermissionMessage(chatId);
       }
@@ -652,12 +771,17 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       bot.sendMessage(
         chatId,
-        `សួស្តី! ${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`
+        `សួស្តី! ${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`,
+        {
+          reply_markup: {
+            remove_keyboard: true,
+          },
+        }
       );
     });
 
     // Set new WL cookie
-    bot.onText(/\/setCookie/, async (msg) => {
+    bot.onText(/\/(setCookie|set_cookie)/, async (msg) => {
       const chatId = msg.chat.id;
       this.config.set('waitingCookie', true);
       await bot.sendMessage(chatId, 'Please give me the cookie.');
@@ -705,22 +829,6 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     });
     this.onCallbackQuery();
 
-    bot.onText(/^\d+$/, async (msg, match) => {
-      const logCode = match?.[0]?.trim();
-      if (!logCode) {
-        bot.sendMessage(
-          msg.chat.id,
-          '❌ Sorry, invalid Code. Please try again.'
-        );
-        return;
-      }
-      const options = this.getValidationLogCodeOptions(logCode, msg.chat.id);
-      if (typeof options === 'string') {
-        return;
-      }
-      await this.onTextNumberAction(msg, logCode, options);
-    });
-
     this.sendNotification();
     bot.on('message', async (msg) => {
       const {
@@ -746,7 +854,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       }
 
       const nameWithChatId = fullname + '|' + chatId;
-      const currentDateString = new Date().toLocaleString().replace(',', ' |');
+      const currentDateString = dayjs().format('YYYY-MM-DD hh:mm:ss A');
       const textLog = text.startsWith('/') ? text : `<code>${text}</code>`;
       const logging = [
         'message',
@@ -766,6 +874,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           this.activeUserMap.set(userId, {
             id: userId,
             fullnameWithUsername,
+            fullname,
             username: msg.from?.username,
             lastActive: new Date(),
             logging: [...(activeUser?.logging || []), logging.join(' ')].slice(
@@ -777,20 +886,22 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         this.activeUserMap.clear();
       }
 
-      if (
-        [
-          '/add',
-          '/remove',
-          '/add',
-          '/remove',
-          '/get',
-          '/set',
-          '/reset',
-          '/clear',
-          '/show',
-        ].some((t) => text.startsWith(t)) &&
-        !this.asAdmin
-      ) {
+      let isUniqueCommand = [
+        '/start',
+        '/menu',
+        '/add',
+        '/remove',
+        '/add',
+        '/remove',
+        '/get',
+        '/set',
+        '/reset',
+        '/clear',
+        '/show',
+        '/stg',
+        '/settings',
+      ].some((t) => text.startsWith(t));
+      if (isUniqueCommand && !this.asAdmin) {
         await this.alertNoPermissionMessage(chatId);
         return;
       }
@@ -809,12 +920,9 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           );
         }
       }
-      if (text.startsWith('/')) {
-        const t = text.slice(1);
-        const isNumeric = /^\d+$/.test(t);
-        if (isNumeric) {
-          await this.onTextNumberAction(msg, t);
-        }
+      if (!isUniqueCommand) {
+        const logCode = text.startsWith('/') ? text.slice(1) : text;
+        await this.onTextCheckLogCodeHandler(msg, logCode);
       }
     });
 
@@ -836,7 +944,8 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       const fileId = msg.animation?.file_id;
       const fileUniqueId = msg.animation?.file_unique_id;
 
-      if (fileId) {
+      this.refreshTypeMember(msg.chat);
+      if (this.asAdmin && fileId) {
         console.log(`✅ Received GIF!`);
         console.log(`File ID: ${fileId}`);
         console.log(`File Unique ID: ${fileUniqueId}`);
@@ -895,7 +1004,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             parse_mode: 'Markdown',
           })
           .catch();
-        if (logCode) await this.onTextCheckLogCodeAction(msg, logCode);
+        await this.onTextCheckLogCodeHandler(msg, logCode);
       } catch (err: any) {
         if (
           err.name === 'NotFoundException' ||
@@ -925,6 +1034,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       if (data)
         try {
+          this.refreshTypeMember(msg.chat);
           const parsedData = JSON.parse(data);
 
           bot.sendMessage(

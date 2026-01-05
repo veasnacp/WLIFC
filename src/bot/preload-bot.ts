@@ -8,6 +8,8 @@ import {
   CONTAINER_CONTROLLER_LIST,
   IS_DEV,
   PUBLIC_URL,
+  WL_ALLOWED_MEMBERS,
+  WL_LOGIN_URL,
   WL_MEMBERS_LIST,
   WL_PRIVATE_API,
   WL_PUBLIC_URL,
@@ -26,11 +28,16 @@ export function getFullname(chat: TelegramBot.Chat) {
   const fullname =
     (first_name || '') + (last_name ? ` ${last_name}` : '') || 'Anonymous';
   const fullnameWithUsername = fullname + (username ? `(@${username})` : '');
-  return { fullname, fullnameWithUsername };
+  return {
+    fullname,
+    fullnameWithUsername,
+    username: chat.username,
+    user: chat,
+  };
 }
 
 export function isAdmin(chat: TelegramBot.Chat, config: MapConfig) {
-  const ADMIN_LIST = config.get('ADMIN_LIST') as string[] | undefined;
+  const ADMIN_LIST = config.get('ADMIN_LIST');
   if (!ADMIN_LIST) return false;
   return ADMIN_LIST.some((n) =>
     isNumber(n)
@@ -40,7 +47,7 @@ export function isAdmin(chat: TelegramBot.Chat, config: MapConfig) {
 }
 
 export function isMemberAsAdmin(chat: TelegramBot.Chat, config: MapConfig) {
-  const WL_MEMBERS_LIST = config.get('WL_MEMBERS_LIST') as string[] | undefined;
+  const WL_MEMBERS_LIST = config.get('WL_MEMBERS_LIST');
   if (!WL_MEMBERS_LIST) return false;
   return WL_MEMBERS_LIST.some((n) =>
     isNumber(n)
@@ -51,15 +58,29 @@ export function isMemberAsAdmin(chat: TelegramBot.Chat, config: MapConfig) {
 
 export function isMemberAsContainerController(
   chat: TelegramBot.Chat,
-  config: MapConfig,
-  currentUser: ReturnType<typeof getFullname>
+  self: WLCheckerBotSendData
 ) {
-  const { fullname } = currentUser;
-  const CONTAINER_CONTROLLER_LIST = config.get('CONTAINER_CONTROLLER_LIST') as
-    | string[]
-    | undefined;
+  const { fullname } = self.currentUser;
+  const CONTAINER_CONTROLLER_LIST = self.config.get(
+    'CONTAINER_CONTROLLER_LIST'
+  );
   if (!CONTAINER_CONTROLLER_LIST) return false;
   return CONTAINER_CONTROLLER_LIST.some((n) =>
+    isNumber(n) ? n === String(chat.id) : n === (chat.username || fullname)
+  );
+}
+
+export function isMemberAsEmployee(
+  chat: TelegramBot.Chat,
+  self: WLCheckerBotSendData
+) {
+  if (self.asAdmin || self.asAdminMember || self.asMemberContainerController)
+    return true;
+
+  const { fullname } = self.currentUser;
+  const WL_ALLOWED_MEMBERS = self.config.get('WL_ALLOWED_MEMBERS');
+  if (!WL_ALLOWED_MEMBERS) return false;
+  return WL_ALLOWED_MEMBERS.some((n) =>
     isNumber(n) ? n === String(chat.id) : n === (chat.username || fullname)
   );
 }
@@ -99,6 +120,7 @@ export class WLCheckerBotPreLoad {
   asAdmin = false;
   asAdminMember = false;
   asMemberContainerController = false;
+  asMemberAsEmployee = false;
   currentUser = {} as ReturnType<typeof getFullname>;
   constructor(public bot: TelegramBot) {
     this.currentDate = this.getCurrentData();
@@ -109,6 +131,21 @@ export class WLCheckerBotPreLoad {
     this.fileData = path.join(this.cachePath, this.currentFileName);
 
     this.loadCacheData();
+  }
+  get adminUsers() {
+    return this.config.get('ADMIN_LIST') || [];
+  }
+  get editorUsers() {
+    return this.config.get('WL_MEMBERS_LIST') || [];
+  }
+  get controllerUsers() {
+    return this.config.get('CONTAINER_CONTROLLER_LIST') || [];
+  }
+  get employeeUsers() {
+    return this.config.get('WL_ALLOWED_MEMBERS') || [];
+  }
+  get bannedUsers() {
+    return this.config.get('bannedUsers') || [];
   }
   getCurrentData() {
     return {
@@ -155,6 +192,10 @@ export class WLCheckerBotPreLoad {
     this.config.set(
       'CONTAINER_CONTROLLER_LIST',
       CONTAINER_CONTROLLER_LIST ? CONTAINER_CONTROLLER_LIST.split(',') : []
+    );
+    this.config.set(
+      'WL_ALLOWED_MEMBERS',
+      WL_ALLOWED_MEMBERS ? WL_ALLOWED_MEMBERS.split(',') : []
     );
     this.config.set('bannedUsers', []);
     if (process.env.BOT_STATUS === 'maintenance')
@@ -218,9 +259,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     this.asAdminMember = isMemberAsAdmin(chat, this.config);
     this.asMemberContainerController = isMemberAsContainerController(
       chat,
-      this.config,
-      this.currentUser
+      this
     );
+    this.asMemberAsEmployee = isMemberAsEmployee(chat, this);
   }
   isBannedUser(chat: TelegramBot.Chat) {
     const alertMessage = ''.concat(
@@ -583,6 +624,38 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     }
     return { data, refetchData, hasSubLogCodeCache };
   }
+  async requireLoginHandler(chatId: number, requireLogin?: boolean) {
+    if (
+      requireLogin &&
+      this.singleAdminId &&
+      this.config.get('status') !== 'maintenance'
+    ) {
+      this.config.set('status', 'maintenance');
+      try {
+        await this.bot.sendMessage(chatId, this.statusMessage.maintenance);
+        await this.bot.sendSticker(chatId, STICKER_ID.working);
+        this.bot.sendMessage(
+          this.singleAdminId,
+          'Hey, Admin! Please login and update cookie.',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: 'Goto Login',
+                    url: WL_LOGIN_URL,
+                  },
+                  { text: 'Update Cookie', url: WL_PRIVATE_API },
+                ],
+              ],
+            },
+          }
+        );
+      } catch (error: any) {
+        console.error('Error to send a notification to admin.', error.message);
+      }
+    }
+  }
   async getDataWLFetching(
     chat: TelegramBot.Chat,
     wl: WLLogistic,
@@ -595,7 +668,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     const wl_data = await wl.getDataFromLogCode(
       logCode,
       options?.showAllSmallPackage,
-      options?.isSubLogCode
+      options?.isSubLogCode || options?.isTrackingNumber
     );
     if (wl_data && 'message' in wl_data && wl_data.message === 'not found') {
       if (loadingMsgId) await bot.deleteMessage(chatId, loadingMsgId);
@@ -612,39 +685,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           parse_mode: 'HTML',
         })
       );
-      if (
-        wl_data.requireLogin &&
-        this.singleAdminId &&
-        this.config.get('status') !== 'maintenance'
-      ) {
-        this.config.set('status', 'maintenance');
-        try {
-          await bot.sendMessage(chatId, this.statusMessage.maintenance);
-          await bot.sendSticker(chatId, STICKER_ID.working);
-          bot.sendMessage(
-            this.singleAdminId,
-            'Hey, Admin! Please login and update cookie.',
-            {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: 'Goto Login',
-                      url: `${WL_PUBLIC_URL}${wl_data.path}`,
-                    },
-                    { text: 'Update Cookie', url: WL_PRIVATE_API },
-                  ],
-                ],
-              },
-            }
-          );
-        } catch (error: any) {
-          console.error(
-            'Error to send a notification to admin.',
-            error.message
-          );
-        }
-      }
+      await this.requireLoginHandler(chatId, wl_data.requireLogin);
       return;
     }
     return wl_data;
@@ -748,7 +789,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let loadingMsgId;
 
     try {
-      // const IS_DEV = false;
+      const IS_DEV = false;
       const loadingMessage = await bot.sendMessage(
         chatId,
         IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
@@ -778,14 +819,18 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       const invalidMessage = this.invalidMessage;
       const wl = new WLLogistic(logCode, this.wl_cookie);
       wl.asAdminMember = this.asAdminMember;
-      wl.onError = function (error) {
-        console.error('Error Fetch Data', error);
-        bot
-          .sendMessage(chatId, 'oOP! Unavailable to access data.')
-          .then((message) => {
-            invalidMessage.chatId = chatId;
-            invalidMessage.messageId = message.message_id;
-          });
+      wl.onError = async (error) => {
+        console.error('[Error Fetch Data]:', error.message);
+        if ('code' in error && error.code === 'ConnectionRefused') {
+          await this.requireLoginHandler(chatId, true);
+        } else {
+          bot
+            .sendMessage(chatId, 'oOP! Unavailable to access data.')
+            .then((message) => {
+              invalidMessage.chatId = chatId;
+              invalidMessage.messageId = message.message_id;
+            });
+        }
       };
       let { data, refetchData, hasSubLogCodeCache } = this.findDataFromCache(
         logCode,
@@ -797,7 +842,8 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           chat,
           wl,
           logCode,
-          loadingMsgId
+          loadingMsgId,
+          options
         );
         if (!wl_data) return;
         data = wl_data;
@@ -839,12 +885,26 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       );
     }
   }
-  async onTextCheckLogCodeAction(
+  async onTextCheckLogCodeHandler(
     msg: TelegramBot.Message,
-    logCode: string,
+    logCode: string | undefined | null,
     showAllSmallPackage?: boolean,
     isSubLogCode?: boolean
   ) {
+    if (!logCode) {
+      this.bot.sendMessage(
+        msg.chat.id,
+        '❌ Sorry, invalid Code. Please try again.'
+      );
+      return;
+    }
+    if (!this.asMemberAsEmployee) {
+      return this.bot.sendMessage(
+        msg.chat.id,
+        `Hey, <b>${msg.chat.first_name}</b>!\n⚠️ You don't have permission this use this action.`,
+        { parse_mode: 'HTML' }
+      );
+    }
     const options = this.getValidationLogCodeOptions(logCode, msg.chat.id);
     if (typeof options === 'string') {
       return;

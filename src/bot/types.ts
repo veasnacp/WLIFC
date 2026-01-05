@@ -2,6 +2,7 @@ export type ConfigCache = {
   cookie: string;
   ADMIN_LIST: string[];
   WL_MEMBERS_LIST: string[];
+  WL_ALLOWED_MEMBERS: string[];
   CONTAINER_CONTROLLER_LIST: string[];
   bannedUsers: string[];
   status: 'active' | 'sleep' | 'deactivated' | 'maintenance' | (string & {});
@@ -23,9 +24,11 @@ export type MapConfig = Omit<PreMapConfig, 'get' | 'set'> & {
 export type ActiveUserData = {
   fullnameWithUsername: string;
   id: number | string;
+  fullname?: string;
   username?: string;
   logging?: string[];
   lastActive: Date;
+  banned?: boolean;
 };
 
 export type OnTextNumberActionOptions = {

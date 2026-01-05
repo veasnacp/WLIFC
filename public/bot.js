@@ -37,54 +37,94 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 var dataJson;
 window.setUpTelegramWebApp = function () {
     return __awaiter(this, void 0, void 0, function () {
-        var path, search, tg, params, message_id, res, data, error_1;
+        function load_data(path) {
+            return __awaiter(this, void 0, void 0, function () {
+                var res, data, error_1;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            _a.trys.push([0, 4, , 5]);
+                            return [4 /*yield*/, fetch(path, {
+                                    method: 'GET',
+                                    headers: { 'Content-Type': 'application/json' },
+                                })];
+                        case 1:
+                            res = _a.sent();
+                            return [4 /*yield*/, res.json()];
+                        case 2:
+                            data = _a.sent();
+                            console.log(path, data.message);
+                            return [4 /*yield*/, fetch('/api/submit-app-data', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        initData: tg_1.initData,
+                                        logCode: path.split('/').at(-1),
+                                        result: JSON.stringify(data.data),
+                                        message_id: message_id_1,
+                                        message: data.message,
+                                    }),
+                                })];
+                        case 3:
+                            _a.sent();
+                            tg_1.close();
+                            return [3 /*break*/, 5];
+                        case 4:
+                            error_1 = _a.sent();
+                            console.error(error_1.message);
+                            return [3 /*break*/, 5];
+                        case 5: return [2 /*return*/];
+                    }
+                });
+            });
+        }
+        var path, search, tg_1, params, message_id_1, isSearch, $loading, loadingHTML_1, $searchBtn;
         return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    path = window.location.pathname;
-                    search = window.location.search;
-                    if (!(path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp)) return [3 /*break*/, 7];
-                    tg = window.Telegram.WebApp;
-                    params = new URLSearchParams(search);
-                    message_id = params.get('message_id');
-                    _a.label = 1;
-                case 1:
-                    _a.trys.push([1, 5, , 6]);
-                    return [4 /*yield*/, fetch(path, {
-                            method: 'GET',
-                            headers: { 'Content-Type': 'application/json' },
-                        })];
-                case 2:
-                    res = _a.sent();
-                    return [4 /*yield*/, res.json()];
-                case 3:
-                    data = _a.sent();
-                    console.log(path, data.message);
-                    return [4 /*yield*/, fetch('/api/submit-app-data', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                initData: tg.initData,
-                                logCode: path.split('/').at(-1),
-                                result: JSON.stringify(data.data),
-                                message_id: message_id,
-                                message: data.message,
-                            }),
-                        })];
-                case 4:
-                    _a.sent();
-                    tg.close();
-                    return [3 /*break*/, 6];
-                case 5:
-                    error_1 = _a.sent();
-                    console.error(error_1.message);
-                    return [3 /*break*/, 6];
-                case 6: return [3 /*break*/, 8];
-                case 7:
-                    console.error('Telegram WebApp object not found. Running outside the Telegram client.');
-                    _a.label = 8;
-                case 8: return [2 /*return*/];
+            path = window.location.pathname;
+            search = window.location.search;
+            if (path.startsWith('/wl/') && window.Telegram && window.Telegram.WebApp) {
+                tg_1 = window.Telegram.WebApp;
+                params = new URLSearchParams(search);
+                message_id_1 = params.get('message_id');
+                isSearch = params.get('search') === 'true';
+                if (isSearch) {
+                    $loading = document.querySelector('#loading');
+                    loadingHTML_1 = $loading.innerHTML;
+                    $loading.innerHTML = /*html*/ "\n        <div class=\"search-section\">\n          <div class=\"d-flex justify-content-center\">\n            <input id=\"logCode\" type=\"text\" placeholder=\"\u179F\u17BC\u1798\u1794\u1789\u17D2\u1785\u17BC\u179B\u179B\u17C1\u1784\u1794\u17BB\u1784...\">\n            <button id=\"search\" class=\"btn-primary\">Search</button>\n          </div>\n          <div class=\"loading\"></div>\n        </div>\n      ";
+                    $searchBtn = document.querySelector('button#search');
+                    if ($searchBtn) {
+                        $searchBtn.addEventListener('click', function () {
+                            return __awaiter(this, void 0, void 0, function () {
+                                var $loading, logCode;
+                                var _a;
+                                return __generator(this, function (_b) {
+                                    switch (_b.label) {
+                                        case 0:
+                                            $loading = document.querySelector('.search-section .loading');
+                                            $loading.innerHTML = loadingHTML_1;
+                                            logCode = (_a = document.querySelector('input#logCode')) === null || _a === void 0 ? void 0 : _a.value;
+                                            if (!logCode) return [3 /*break*/, 2];
+                                            return [4 /*yield*/, load_data("".concat(window.origin, "/wl/").concat(logCode))];
+                                        case 1:
+                                            _b.sent();
+                                            _b.label = 2;
+                                        case 2:
+                                            $loading.innerHTML = '';
+                                            return [2 /*return*/];
+                                    }
+                                });
+                            });
+                        });
+                    }
+                }
+                else {
+                    load_data(path);
+                }
             }
+            else {
+                console.error('Telegram WebApp object not found. Running outside the Telegram client.');
+            }
+            return [2 /*return*/];
         });
     });
 };
