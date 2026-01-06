@@ -2,7 +2,12 @@ import TelegramBot from 'node-telegram-bot-api';
 import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
-import { chunkArray, isNumber, removeDuplicateObjArray } from '../utils/is';
+import {
+  chunkArray,
+  isNumber,
+  removeDuplicateObjArray,
+  splitText,
+} from '../utils/is';
 import {
   ADMIN_LIST,
   CONTAINER_CONTROLLER_LIST,
@@ -12,7 +17,6 @@ import {
   WL_LOGIN_URL,
   WL_MEMBERS_LIST,
   WL_PRIVATE_API,
-  WL_PUBLIC_URL,
 } from '../config/constants';
 import { STICKER_ID } from './sticker';
 import type {
@@ -22,6 +26,7 @@ import type {
   OnTextNumberActionOptions,
 } from './types';
 import { sendMessageOptions } from './send-options';
+import { logger } from '../utils/logger';
 
 export function getFullname(chat: TelegramBot.Chat) {
   const { first_name, last_name, username } = chat;
@@ -93,6 +98,7 @@ const fs = process.getBuiltinModule('fs');
 
 export class WLCheckerBotPreLoad {
   fs = fs;
+  logger = logger;
   currentDate = {} as ReturnType<WLCheckerBotPreLoad['getCurrentData']>;
   cachePath = '';
   usersFile = '';
@@ -223,7 +229,7 @@ export class WLCheckerBotPreLoad {
           .sendMessage(chatId, message, { parse_mode: 'Markdown' })
           .catch();
       } catch (error: any) {
-        console.log('Error save users', error.message);
+        this.logger.info('[Save users]: ' + error.message);
       }
   }
   getStatusMessage(status?: ConfigCache['status']) {
@@ -279,9 +285,42 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       alertMessage,
     ] as const;
   }
+  async sendLongMessage(
+    chatId: number,
+    longText: string,
+    options?: TelegramBot.SendMessageOptions,
+    limit = 4000
+  ) {
+    if (longText.length <= limit) {
+      return await this.bot.sendMessage(chatId, longText, options);
+    }
+    const chunks = splitText(longText, limit);
+
+    let count = 0;
+    for (let chunk of chunks) {
+      if (options?.parse_mode && count > 0) {
+        const match = new RegExp(/<[^>]*>?/gm).exec(chunk);
+        if (match?.[0]) {
+          chunk = '<b>' + chunk + '</b>';
+        }
+        // chunk = chunk.replace(/<[^>]*>?/gm, ''); // clean text
+      }
+      try {
+        await this.bot.sendMessage(chatId, chunk, options);
+
+        // Safety delay to prevent hitting Telegram's flood limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error: any) {
+        this.logger.error(`Sending chunk: ${error.message}`);
+      }
+      count++;
+    }
+  }
   getValidationLogCodeOptions(logCode: string, chatId?: TelegramBot.ChatId) {
     const isNearToNewLogCode = logCode.startsWith('24');
-    const isTrackingNumber = !logCode.startsWith('25');
+    const isTrackingNumber = ![5, 6, 7, 8, 9].some((v) =>
+      logCode.startsWith(`2${v}`)
+    );
     const isNewLogCode = !isTrackingNumber && logCode.length === 12;
     const isOldLogCode = logCode.startsWith('1757');
     const isSubLogCode =
@@ -540,7 +579,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           .sendMediaGroup(chatId, inputMedia)
           .then(async (sentMessages) => {
             messageIdShowMore = sentMessages[0].message_id;
-            console.log(
+            this.logger.success(
               justOne
                 ? `✅ Successfully sent an photo.`
                 : `✅ Successfully sent an album with ${sentMessages.length} items.`
@@ -548,9 +587,10 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           })
           .catch(async (error) => {
             isError = true;
-            console.error(
-              justOne ? 'Error sending photo:' : 'Error sending media group:',
-              (error as Error).message
+            this.logger.error(
+              justOne
+                ? 'Sending photo: '
+                : 'Sending media group: ' + (error as Error).message
             );
             const { message_id } = await this.bot.sendMessage(
               chatId,
@@ -652,7 +692,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           }
         );
       } catch (error: any) {
-        console.error('Error to send a notification to admin.', error.message);
+        this.logger.error('Send a notification to admin: ' + error.message);
       }
     }
   }
@@ -789,7 +829,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let loadingMsgId;
 
     try {
-      const IS_DEV = false;
+      // const IS_DEV = false;
       const loadingMessage = await bot.sendMessage(
         chatId,
         IS_DEV ? LOADING_TEXT : 'សូមចុចប៊ូតុងខាងក្រោម! 👇',
@@ -820,7 +860,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       const wl = new WLLogistic(logCode, this.wl_cookie);
       wl.asAdminMember = this.asAdminMember;
       wl.onError = async (error) => {
-        console.error('[Error Fetch Data]:', error.message);
+        this.logger.error('[Fetch Data]: ' + error.message);
         if ('code' in error && error.code === 'ConnectionRefused') {
           await this.requireLoginHandler(chatId, true);
         } else {
@@ -860,9 +900,8 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         await bot.deleteMessage(chatId, loadingMsgId);
       }
     } catch (error) {
-      console.error(
-        'Error in image generation process:',
-        (error as Error).message
+      this.logger.error(
+        'Image generation process: ' + (error as Error).message
       );
 
       // Try to delete the loading message if it was sent successfully
@@ -870,9 +909,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         try {
           await bot.deleteMessage(chatId, loadingMsgId);
         } catch (error) {
-          console.warn(
-            'Could not delete loading message on error:',
-            (error as Error).message
+          this.logger.warn(
+            'Could not delete loading message on error: ' +
+              (error as Error).message
           );
         }
       }

@@ -96,3 +96,29 @@ export const chunkArray = <T>(array: T[], chunkSize: number): T[][] => {
 
   return result;
 };
+
+/**
+ * Splits a long string into chunks of a specified size.
+ * Tries to split at newlines or spaces to avoid cutting words.
+ */
+export function splitText(text: string, limit = 4000) {
+  const chunks = [];
+  let str = text;
+
+  while (str.length > limit) {
+    // 1. Look for the last newline before the limit
+    let splitIndex = str.lastIndexOf('\n', limit);
+
+    // 2. If no newline, look for the last space
+    if (splitIndex === -1) splitIndex = str.lastIndexOf(' ', limit);
+
+    // 3. If no space (one giant word), force a hard cut
+    if (splitIndex === -1) splitIndex = limit;
+
+    chunks.push(str.substring(0, splitIndex).trim());
+    str = str.substring(splitIndex).trim();
+  }
+
+  if (str.length > 0) chunks.push(str);
+  return chunks;
+}

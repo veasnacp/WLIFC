@@ -17,6 +17,8 @@ import {
 import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
 
+const publicPath = path.join(process.cwd(), 'public');
+
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
 const bot = setupBot();
@@ -228,10 +230,8 @@ const app = new Elysia({
   .get('/', ({ html }) => {
     return html('<b>Welcome to WL Checker!!!</b>');
   })
-  .get('/favicon.ico', () =>
-    file(path.join(process.cwd(), 'public', 'favicon.ico'))
-  )
-  .get('/bot.js', () => file(path.join(process.cwd(), 'public', 'bot.js')))
+  .get('/favicon.ico', () => file(path.join(publicPath, 'favicon.ico')))
+  .get('/bot.js', () => file(path.join(publicPath, 'bot.js')))
   .get('/wl/set-cookie', async ({ query, set }) => {
     set.status = 200;
     let cookie = query.cookie || '';
@@ -248,7 +248,7 @@ const app = new Elysia({
   .get('/wl/*', async ({ params, query, set }) => {
     set.status = 200;
     if (query.web === 'html') {
-      return file(path.join(process.cwd(), 'public', 'web-app.html'));
+      return file(path.join(publicPath, 'web-app.html'));
     }
     const logCode = params['*'];
     const isNumeric = isNumber(logCode);

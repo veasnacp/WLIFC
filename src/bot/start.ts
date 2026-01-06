@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { MAX_TEXT_LENGTH, WLCheckerBotSendData } from './preload-bot';
-import type { ActiveUserData, ConfigCache, MapConfig } from './types';
+import type { ConfigCache, MapConfig } from './types';
 import {
   ADMIN_LIST,
   IS_DEV,
@@ -20,7 +20,6 @@ import {
 import { broadcastByFileId } from './notifications';
 import translate from '@iamtraction/google-translate';
 import { Jimp } from 'jimp';
-import { logger } from '../utils/logger';
 import {
   BarcodeFormat,
   BinaryBitmap,
@@ -189,7 +188,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       try {
         await this.bot.sendPhoto(chatId, url);
       } catch (error: any) {
-        console.error('Error send photo', error);
+        this.logger.error(`Send Photo: ${error.message}`);
       }
     });
   }
@@ -205,10 +204,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           }
         )
         .then(() => {
-          console.log('Command menu updated successfully');
+          this.logger.success('Command menu updated successfully');
         });
     } catch (error: any) {
-      console.error('[set command]', error.message);
+      this.logger.error('[set command]: ' + error.message);
     }
   }
   async setCookie(
@@ -233,8 +232,8 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     if (options.testingData) {
       const wl = new WLLogistic('251209180405', cookie);
       wl.asAdminMember = Boolean(options.asAdminMember);
-      wl.onError = function (error) {
-        console.error('Error Fetch Data', error);
+      wl.onError = (error) => {
+        this.logger.error('[Fetch Data]: ' + error.message);
         bot.sendMessage(chatId, 'oOP! Unavailable to access data.');
       };
       const dataList = await wl.getFirstData();
@@ -415,7 +414,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           } catch (err) {
             isError = true;
             message = `❌ Failed to delete ${file}: ` + (err as Error).message;
-            console.error(message);
+            this.logger.error(message);
           }
         });
       }
@@ -423,7 +422,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         reply_to_message_id: msg.message_id,
       });
     } catch (error) {
-      console.error('Error sending clear message:', (error as Error).message);
+      this.logger.error('Sending clear message: ' + (error as Error).message);
     }
   }
   async getLogCodes(msg: TelegramBot.Message) {
@@ -454,7 +453,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     );
     try {
       const today = dayjs().format('YYYY-MM-DD');
-      await this.bot.sendMessage(
+      await this.sendLongMessage(
         chatId,
         activeUsers.length
           ? activeUsers
@@ -473,7 +472,17 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           reply_to_message_id: msg.message_id,
         })
       );
-    } catch {}
+    } catch (error: any) {
+      this.logger.error(error.message);
+      await this.bot.sendMessage(
+        chatId,
+        error.message,
+        sendMessageOptions({
+          parse_mode: 'HTML',
+          reply_to_message_id: msg.message_id,
+        })
+      );
+    }
   }
   async showStatus(msg: TelegramBot.Message) {
     const chatId = msg.chat.id;
@@ -572,7 +581,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             try {
               this.bot.deleteMessage(chatId, msg.message_id);
             } catch (error) {
-              console.error('Error delete message:', (error as Error).message);
+              this.logger.error('Delete message: ' + (error as Error).message);
             }
           } else if (action?.startsWith('tr_from_')) {
             let from = action.replace('tr_from_', '');
@@ -584,18 +593,22 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               try {
                 const loadingMessage = await this.bot.sendMessage(
                   chatId,
-                  '⏳ កំពុងបកប្រែ សូមមេត្តារងចាំបន្តិចសិន...'
+                  '⏳ កំពុងបកប្រែ សូមមេត្តារងចាំបន្តិចសិន...',
+                  {
+                    reply_to_message_id: msg.message_id,
+                  }
                 );
                 const res = await translate(text, { to: 'km' });
-                this.loggingCache.add(
-                  `👉 ${fullname} clicked translate button from log code /${logCode}`
-                );
+                if (!this.asAdmin)
+                  this.loggingCache.add(
+                    `👉 ${fullname} clicked translate button from log code /${logCode}`
+                  );
                 this.bot.editMessageText(`${text} \n👉👉👉 ${res.text}`, {
                   chat_id: chatId,
                   message_id: loadingMessage.message_id,
                 });
               } catch (error) {
-                console.error((error as Error).message);
+                this.logger.error((error as Error).message);
                 this.bot.answerCallbackQuery(query.id, {
                   text: '❌ Translation failed!',
                 });
@@ -613,9 +626,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               );
             }
             if (!data) return;
-            this.loggingCache.add(
-              `👉 ${fullname} clicked show more button from log code /${logCode}`
-            );
+            if (!this.asAdmin)
+              this.loggingCache.add(
+                `👉 ${fullname} clicked show more button from log code /${logCode}`
+              );
             await this.showMoreDataCaption(
               chatId,
               data,
@@ -623,7 +637,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             );
           } else if (action?.startsWith('user_info_')) {
             const userId = action.replace('user_info_', '');
-            // console.log([...this.activeUserMap.keys()].join(','));
+            // this.logger.info([...this.activeUserMap.keys()].join(','));
             if (isNumber(userId)) {
               const id = Number(userId);
               const member = this.activeUserMap.get(id);
@@ -737,7 +751,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           }
         }
       } catch (error) {
-        console.error('Error delete message:', (error as Error).message);
+        this.logger.error('Delete message: ' + (error as Error).message);
       }
     });
   }
@@ -864,7 +878,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         'at',
         currentDateString,
       ];
-      console.log(logging.join(' '));
+      this.logger.info(logging.join(' '));
 
       if (this.currentDate.day() === new Date().getDate()) {
         const activeUser = this.activeUserMap.get(userId);
@@ -914,13 +928,12 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             parse_mode: 'Markdown',
           });
         } catch (error) {
-          console.error(
-            'Error delete invalid message',
-            (error as Error).message
+          this.logger.error(
+            'Delete invalid message ' + (error as Error).message
           );
         }
       }
-      if (!isUniqueCommand) {
+      if (!isUniqueCommand && text) {
         const logCode = text.startsWith('/') ? text.slice(1) : text;
         await this.onTextCheckLogCodeHandler(msg, logCode);
       }
@@ -930,8 +943,8 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       const stickerId = msg.sticker?.file_id;
       const stickerSet = msg.sticker?.set_name;
       if (this.asAdmin) {
-        console.log(`Sticker ID: ${stickerId}`);
-        console.log(`From Set: ${stickerSet}`);
+        this.logger.info(`Sticker ID: ${stickerId}`);
+        this.logger.info(`From Set: ${stickerSet}`);
         // The bot will reply with the ID so you can copy it easily
         bot.sendMessage(
           msg.chat.id,
@@ -946,9 +959,9 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       this.refreshTypeMember(msg.chat);
       if (this.asAdmin && fileId) {
-        console.log(`✅ Received GIF!`);
-        console.log(`File ID: ${fileId}`);
-        console.log(`File Unique ID: ${fileUniqueId}`);
+        this.logger.info(`✅ Received GIF!`);
+        this.logger.info(`File ID: ${fileId}`);
+        this.logger.info(`File Unique ID: ${fileUniqueId}`);
         // You can now save this fileId to your Map or Database
         bot.sendMessage(msg.chat.id, `Got it! The file_id is: \`${fileId}\``, {
           parse_mode: 'Markdown',
@@ -1016,7 +1029,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               '❌ No barcode or QR code detected. Try a clearer or closer photo.'
           );
         } else {
-          console.error(err.message);
+          this.logger.error(err.message);
           bot.sendMessage(
             chatId,
             '⚠️ An error occurred while processing the image.'
@@ -1052,7 +1065,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     });
 
     bot.on('polling_error', (error) => {
-      console.error('[Polling Error]', error.name, error.message);
+      this.logger.error('[Polling]: ' + error.name + ' ' + error.message);
     });
 
     return this;

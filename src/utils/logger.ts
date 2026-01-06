@@ -59,23 +59,23 @@ class CustomLogger {
   }
 
   // Public Methods
-  public info(message: string): void {
-    console.log(this.format('[INFO]', 'cyan', undefined, true), message);
+  public info(...message: any[]): void {
+    console.log(this.format('[INFO]', 'cyan', undefined, true), ...message);
   }
 
-  public success(message: string): void {
-    console.log(this.format(' SUCCESS ', 'white', 'bgGreen', true), message);
+  public success(...message: any[]): void {
+    console.log(this.format(' SUCCESS ', 'white', 'bgGreen', true), ...message);
   }
 
-  public warn(message: string): void {
+  public warn(...message: any[]): void {
     console.log(
       this.format(' WARNING ', 'black' as any, 'bgYellow', true),
       message
     );
   }
 
-  public error(message: string): void {
-    console.error(this.format(' ERROR ', 'white', 'bgRed', true), message);
+  public error(...message: any[]): void {
+    console.error(this.format(' ERROR ', 'white', 'bgRed', true), ...message);
   }
 
   /**
