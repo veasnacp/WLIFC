@@ -299,10 +299,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let count = 0;
     for (let chunk of chunks) {
       if (options?.parse_mode && count > 0) {
-        const match = new RegExp(/<[^>]*>?/gm).exec(chunk);
-        if (match?.[0]) {
-          chunk = '<b>' + chunk + '</b>';
-        }
+        chunk = '<b>' + chunk + '</b>';
         // chunk = chunk.replace(/<[^>]*>?/gm, ''); // clean text
       }
       try {
@@ -384,6 +381,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     isTrackingNumber: boolean
   ) {
     let fullCaption: string | undefined;
+    let maxFullCaption: string | undefined;
     let caption: string | undefined;
 
     if (data) {
@@ -392,60 +390,55 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
       const isSplitting = goods_numbers && goods_numbers.length > 1;
-      fullCaption = ''
-        .concat(
-          `- លេខបុង: ${
-            isTrackingNumber ? data.logcode : logCodeFromCommand
-          } ✅ ${isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'}: ${
-            data.container_num?.split('-').slice(1).join('.') ||
-            'N/A(ប្រហែលជើងអាកាស)'
-          }\n`,
-          `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
-          `- ចំនួន: ${data.goods_number}\n`,
-          isSplitting
-            ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n`
-            : '',
-          `- ទម្ងន់: ${
-            data.weight.length <= 5
-              ? data.weight
-              : Number(data.weight).toFixed(2)
-          }kg\n`,
-          `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
-          `- ម៉ែត្រគូបផ្សេងគ្នា: ${
-            data.volume_record?.trim()
-              ? ''.concat(
-                  '[\n',
-                  data.volume_record
-                    .split('<br>')
-                    .filter(Boolean)
-                    .map((v) => {
-                      v = v.includes('=') ? v.split('=')[0] : v;
-                      const total = v
-                        .split('x')
-                        .reduce((acc, p) => acc * Number(p), 1);
-                      return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
-                    })
-                    .join('\n'),
-                  '\n\t\t\t]'
-                )
-              : 'N/A'
-          }\n`,
-          `- ទំនិញ: ${data.goods_name}${
-            data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
-          }\n`,
-          this.asAdmin || this.asAdminMember || this.asMemberContainerController
+      fullCaption = ''.concat(
+        `- លេខបុង: ${isTrackingNumber ? data.logcode : logCodeFromCommand} ✅ ${
+          isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
+        }: ${
+          data.container_num?.split('-').slice(1).join('.') ||
+          'N/A(ប្រហែលជើងអាកាស)'
+        }\n`,
+        `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
+        `- ចំនួន: ${data.goods_number}\n`,
+        isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
+        `- ទម្ងន់: ${
+          data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
+        }kg\n`,
+        `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
+        `- ម៉ែត្រគូបផ្សេងគ្នា: ${
+          data.volume_record?.trim()
             ? ''.concat(
-                '- ទូរកុងតឺន័រ: ',
-                data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
-                '\n'
+                '[\n',
+                data.volume_record
+                  .split('<br>')
+                  .filter(Boolean)
+                  .map((v) => {
+                    v = v.includes('=') ? v.split('=')[0] : v;
+                    const total = v
+                      .split('x')
+                      .reduce((acc, p) => acc * Number(p), 1);
+                    return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
+                  })
+                  .join('\n'),
+                '\n\t\t\t]'
               )
-            : '',
-          `- ផ្សេងៗ: ${data.desc?.replace('到达', '到达(មកដល់)') || 'N/A'}\n`
-        )
-        .substring(0, MAX_TEXT_LENGTH);
+            : 'N/A'
+        }\n`,
+        `- ទំនិញ: ${data.goods_name}${
+          data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
+        }\n`,
+        this.asAdmin || this.asAdminMember || this.asMemberContainerController
+          ? ''.concat(
+              '- ទូរកុងតឺន័រ: ',
+              data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
+              '\n'
+            )
+          : '',
+        `- ផ្សេងៗ: ${data.desc?.replace('到达', '到达(មកដល់)') || 'N/A'}\n`
+      );
+      maxFullCaption = fullCaption.substring(0, MAX_TEXT_LENGTH);
       caption = fullCaption.substring(0, MAX_CAPTION_LENGTH);
     }
-    return { caption, fullCaption };
+    return { caption, fullCaption, maxFullCaption };
   }
   async sendFullCationNoImageFound(
     chatId: number,
@@ -453,7 +446,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     data: DataExpand | undefined,
     afterSendCaption?: VoidFunction
   ) {
-    await this.bot.sendMessage(
+    await this.sendLongMessage(
       chatId,
       `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${fullCaption}`,
       sendMessageOptions()
@@ -476,7 +469,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     logCodeFromCommand: string,
     messageIdShowMore?: string | number
   ) {
-    return await this.bot.sendMessage(
+    return await this.sendLongMessage(
       chat.id,
       fullCaption,
       sendMessageOptions(
