@@ -465,7 +465,6 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                     .replaceAll(today, 'TODAY')}`
               )
               .join('\n')
-              .substring(0, MAX_TEXT_LENGTH)
           : 'Nobody actives today.',
         sendMessageOptions({
           parse_mode: 'HTML',

@@ -813,7 +813,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         `${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`
       );
 
-    const isTrackingNumber = !logCode.startsWith('25');
+    const isTrackingNumber = Boolean(options?.isTrackingNumber);
 
     const [isBannedUser, alertMessage] = this.isBannedUser(chat);
     if (isBannedUser) {
