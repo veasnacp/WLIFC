@@ -90,6 +90,53 @@ export function isMemberAsEmployee(
   );
 }
 
+export function splitTextWithEntities(
+  fullText: string,
+  entities: TelegramBot.MessageEntity[] = [],
+  limit = 4000
+) {
+  const chunks = [];
+  let start = 0;
+
+  while (start < fullText.length) {
+    let end = start + limit;
+
+    // Attempt to split at a space or newline for readability
+    if (end < fullText.length) {
+      const lastSpace = fullText.lastIndexOf(' ', end);
+      if (lastSpace > start) end = lastSpace;
+    }
+
+    const chunkText = fullText.substring(start, end);
+    const chunkEntities = [];
+
+    // Filter and adjust entities for this chunk
+    for (const entity of entities) {
+      const entityEnd = entity.offset + entity.length;
+
+      // Does the entity overlap with this chunk?
+      if (entity.offset < end && entityEnd > start) {
+        // Calculate the relative offset within this specific chunk
+        const adjustedOffset = Math.max(0, entity.offset - start);
+
+        // Calculate how much of the entity fits in this chunk
+        const partEnd = Math.min(entityEnd, end);
+        const adjustedLength = partEnd - Math.max(entity.offset, start);
+
+        chunkEntities.push({
+          ...entity,
+          offset: adjustedOffset,
+          length: adjustedLength,
+        });
+      }
+    }
+
+    chunks.push({ text: chunkText, entities: chunkEntities });
+    start = end;
+  }
+  return chunks;
+}
+
 export const LOADING_TEXT =
   'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
 export const MAX_CAPTION_LENGTH = 1024;
@@ -390,6 +437,22 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
       const isSplitting = goods_numbers && goods_numbers.length > 1;
+      let warehousingRemarks = data.warehousingremarks || '';
+
+      if (warehousingRemarks) {
+        if (!this.asAdmin) {
+          const delimiter = warehousingRemarks.includes('，') ? '，' : ',';
+          warehousingRemarks = warehousingRemarks.split(delimiter)[0];
+        }
+        const translatedRemarks = warehousingRemarks
+          .replace(/托/g, 'ប៉ាឡែត')
+          .replace(/件/g, 'ដុំ');
+
+        warehousingRemarks = `\t\t\t\t☘\t\t\t\t(${translatedRemarks})`;
+        if (!this.asAdmin && !/(托|件)/g.test(warehousingRemarks)) {
+          warehousingRemarks = '';
+        }
+      }
       fullCaption = ''.concat(
         `- លេខបុង: ${isTrackingNumber ? data.logcode : logCodeFromCommand} ✅ ${
           isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
@@ -398,7 +461,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           'N/A(ប្រហែលជើងអាកាស)'
         }\n`,
         `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
-        `- ចំនួន: ${data.goods_number}\n`,
+        `- ចំនួន: ${data.goods_number}${warehousingRemarks}\n`,
         isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
         `- ទម្ងន់: ${
           data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
