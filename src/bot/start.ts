@@ -29,6 +29,8 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
+import { markdown } from './extensions/markdown';
+import { splitTextWithEntities } from './utils';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -446,43 +448,119 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       }
     );
   }
-  async getLogging(msg: TelegramBot.Message) {
+  async getAllLogging(msg: TelegramBot.Message, showAll = true) {
     const chatId = msg.chat.id;
     const activeUsers = Array.from(this.activeUserMap.values()).filter((u) =>
       Array.isArray(u.logging)
     );
     try {
       const today = dayjs().format('YYYY-MM-DD');
-      await this.sendLongMessage(
+      let message = activeUsers.length
+        ? activeUsers
+            .map((u) => {
+              let logging = u.logging || [];
+              let hasPrev = !showAll;
+              if (!showAll && logging.length) {
+                logging = logging.filter((l) => l.includes(today));
+                hasPrev = logging.length !== u.logging?.length;
+              }
+              return `🧑 **${u.fullnameWithUsername}**\n `.concat(
+                logging.join('\n').replaceAll(today, 'TODAY'),
+                hasPrev ? `/getLoggingId${u.id}` : ''
+              );
+            })
+            .join('\n')
+        : 'Nobody actives today.';
+
+      await this.sendLongMessageV2(
         chatId,
-        activeUsers.length
-          ? activeUsers
-              .map(
-                (u) =>
-                  `🧑 <b>${u.fullnameWithUsername}</b>\n ${u.logging
-                    ?.slice(-10)
-                    .join('\n')
-                    .replaceAll(today, 'TODAY')}`
-              )
-              .join('\n')
-          : 'Nobody actives today.',
-        sendMessageOptions({
-          parse_mode: 'HTML',
-          reply_to_message_id: msg.message_id,
-        })
+        message,
+        sendMessageOptions({ reply_to_message_id: msg.message_id })
       );
+      // await this.sendLongMessage(
+      //   chatId, message,
+      //   sendMessageOptions({
+      //     parse_mode: 'HTML',
+      //     reply_to_message_id: msg.message_id,
+      //   })
+      // );
     } catch (error: any) {
       this.logger.error(error.message);
       await this.bot.sendMessage(
         chatId,
         error.message,
         sendMessageOptions({
-          parse_mode: 'HTML',
           reply_to_message_id: msg.message_id,
         })
       );
     }
   }
+  getLogging = async (
+    msg: TelegramBot.Message,
+    match?: RegExpExecArray | null
+  ) => {
+    if (match?.[0] !== match?.input) return;
+    return await this.getAllLogging(msg, false);
+  };
+  getLoggingByUserId = async (
+    msg: TelegramBot.Message,
+    matchOrId?: string | number | RegExpExecArray | null
+  ) => {
+    const userId = typeof matchOrId === 'object' ? matchOrId?.[1] : matchOrId;
+    console.info('userId', userId, matchOrId);
+    if (isNumber(userId)) {
+      const id = Number(userId);
+      const member = { ...this.activeUserMap.get(id) };
+      if (member?.id) {
+        const logging = member.logging || [];
+        member.id = '```' + `${userId}` + '```';
+        delete member.logging;
+        const today = dayjs().format('YYYY-MM-DD');
+        const message = ''.concat(
+          JSON.stringify(member, null, 2),
+          `\n\n*Logging:*\n`,
+          logging.join('\n').replaceAll(today, 'TODAY')
+        );
+        return await this.sendLongMessageV2(
+          msg.chat.id,
+          message,
+          sendMessageOptions({
+            reply_to_message_id: msg.message_id,
+            reply_markup: {
+              inline_keyboard: [
+                ...['Allow', 'Ban'].map((type) => {
+                  let removeText = type;
+                  if (type === 'Allow') {
+                    removeText = 'Disallow';
+                  } else {
+                    removeText = 'Remove '.concat(type);
+                  }
+                  return [
+                    {
+                      text: type,
+                      callback_data: 'edit_user_'.concat(
+                        type.toLowerCase(),
+                        '|',
+                        `${userId}`
+                      ),
+                    },
+                    {
+                      text: removeText,
+                      callback_data: 'edit_user_remove_'.concat(
+                        type.toLowerCase(),
+                        '|',
+                        `${userId}`
+                      ),
+                    },
+                  ];
+                }),
+              ],
+            },
+          })
+        );
+      }
+    }
+  };
   async showStatus(msg: TelegramBot.Message) {
     const chatId = msg.chat.id;
     if (this.asAdmin) {
@@ -637,57 +715,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           } else if (action?.startsWith('user_info_')) {
             const userId = action.replace('user_info_', '');
             // this.logger.info([...this.activeUserMap.keys()].join(','));
-            if (isNumber(userId)) {
-              const id = Number(userId);
-              const member = this.activeUserMap.get(id);
-              if (member) {
-                const logging = member.logging || [];
-                member.id = `<code>${id}</code>`;
-                delete member.logging;
-                const today = dayjs().format('YYYY-MM-DD');
-                await this.bot.sendMessage(
-                  chatId,
-                  JSON.stringify(member, null, 2) +
-                    `\n\n<b>Logging:</b>\n${logging
-                      .join('\n')
-                      .replaceAll(today, 'TODAY')}`,
-                  {
-                    parse_mode: 'HTML',
-                    reply_to_message_id: msg.message_id,
-                    reply_markup: {
-                      inline_keyboard: [
-                        ...['Allow', 'Ban'].map((type) => {
-                          let removeText = type;
-                          if (type === 'Allow') {
-                            removeText = 'Disallow';
-                          } else {
-                            removeText = 'Remove '.concat(type);
-                          }
-                          return [
-                            {
-                              text: type,
-                              callback_data: 'edit_user_'.concat(
-                                type.toLowerCase(),
-                                '|',
-                                userId
-                              ),
-                            },
-                            {
-                              text: removeText,
-                              callback_data: 'edit_user_remove_'.concat(
-                                type.toLowerCase(),
-                                '|',
-                                userId
-                              ),
-                            },
-                          ];
-                        }),
-                      ],
-                    },
-                  }
-                );
-              }
-            }
+            await this.getLoggingByUserId(msg, userId);
           } else if (action?.startsWith('edit_user_')) {
             const [_action, userId] = action.split('|');
             if (isNumber(userId)) {
@@ -819,6 +847,8 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
     bot.onText(/\/getLogCodes/, this.getLogCodes);
     bot.onText(/\/getLogging/, this.getLogging);
+    bot.onText(/\/getAllLogging/, (msg) => this.getAllLogging(msg, false));
+    bot.onText(/\/getLoggingId(.+)/, this.getLoggingByUserId);
     bot.onText(/\/getConfigUsers/, this.getConfigUsers);
     bot.onText(/\/resetData/, this.resetData);
     bot.onText(/\/clear/, this.clearAll);

@@ -27,6 +27,8 @@ import type {
 } from './types';
 import { sendMessageOptions } from './send-options';
 import { logger } from '../utils/logger';
+import { markdown } from './extensions/markdown';
+import { splitTextWithEntities } from './utils';
 
 export function getFullname(chat: TelegramBot.Chat) {
   const { first_name, last_name, username } = chat;
@@ -90,52 +92,52 @@ export function isMemberAsEmployee(
   );
 }
 
-export function splitTextWithEntities(
-  fullText: string,
-  entities: TelegramBot.MessageEntity[] = [],
-  limit = 4000
-) {
-  const chunks = [];
-  let start = 0;
+// export function splitTextWithEntities(
+//   fullText: string,
+//   entities: TelegramBot.MessageEntity[] = [],
+//   limit = 4000
+// ) {
+//   const chunks = [];
+//   let start = 0;
 
-  while (start < fullText.length) {
-    let end = start + limit;
+//   while (start < fullText.length) {
+//     let end = start + limit;
 
-    // Attempt to split at a space or newline for readability
-    if (end < fullText.length) {
-      const lastSpace = fullText.lastIndexOf(' ', end);
-      if (lastSpace > start) end = lastSpace;
-    }
+//     // Attempt to split at a space or newline for readability
+//     if (end < fullText.length) {
+//       const lastSpace = fullText.lastIndexOf(' ', end);
+//       if (lastSpace > start) end = lastSpace;
+//     }
 
-    const chunkText = fullText.substring(start, end);
-    const chunkEntities = [];
+//     const chunkText = fullText.substring(start, end);
+//     const chunkEntities = [];
 
-    // Filter and adjust entities for this chunk
-    for (const entity of entities) {
-      const entityEnd = entity.offset + entity.length;
+//     // Filter and adjust entities for this chunk
+//     for (const entity of entities) {
+//       const entityEnd = entity.offset + entity.length;
 
-      // Does the entity overlap with this chunk?
-      if (entity.offset < end && entityEnd > start) {
-        // Calculate the relative offset within this specific chunk
-        const adjustedOffset = Math.max(0, entity.offset - start);
+//       // Does the entity overlap with this chunk?
+//       if (entity.offset < end && entityEnd > start) {
+//         // Calculate the relative offset within this specific chunk
+//         const adjustedOffset = Math.max(0, entity.offset - start);
 
-        // Calculate how much of the entity fits in this chunk
-        const partEnd = Math.min(entityEnd, end);
-        const adjustedLength = partEnd - Math.max(entity.offset, start);
+//         // Calculate how much of the entity fits in this chunk
+//         const partEnd = Math.min(entityEnd, end);
+//         const adjustedLength = partEnd - Math.max(entity.offset, start);
 
-        chunkEntities.push({
-          ...entity,
-          offset: adjustedOffset,
-          length: adjustedLength,
-        });
-      }
-    }
+//         chunkEntities.push({
+//           ...entity,
+//           offset: adjustedOffset,
+//           length: adjustedLength,
+//         });
+//       }
+//     }
 
-    chunks.push({ text: chunkText, entities: chunkEntities });
-    start = end;
-  }
-  return chunks;
-}
+//     chunks.push({ text: chunkText, entities: chunkEntities });
+//     start = end;
+//   }
+//   return chunks;
+// }
 
 export const LOADING_TEXT =
   'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
@@ -360,8 +362,34 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       count++;
     }
   }
+  async sendLongMessageV2(
+    chatId: number,
+    longText: string,
+    options?: TelegramBot.SendMessageOptions,
+    limit = MAX_TEXT_LENGTH
+  ) {
+    const [text, entities] = markdown.parse(longText);
+    options = { ...options, entities, parse_mode: undefined };
+    if (text.length <= limit) {
+      return await this.bot.sendMessage(chatId, text, options);
+    }
+    let i = 0;
+    const messages = [];
+    for (const [_message, _entities] of splitTextWithEntities(text, entities)) {
+      try {
+        const message = await this.bot.sendMessage(chatId, _message, options);
+        messages.push(message);
+      } catch (error: any) {
+        this.logger.error(`index ${i}`, error.message);
+      }
+      i++;
+    }
+    return messages;
+  }
   getValidationLogCodeOptions(logCode: string, chatId?: TelegramBot.ChatId) {
-    const isNearToNewLogCode = logCode.startsWith('24');
+    const isNearToNewLogCode = [1, 2, 3, 4].some((v) =>
+      logCode.startsWith(`2${v}`)
+    );
     const isTrackingNumber = ![5, 6, 7, 8, 9].some((v) =>
       logCode.startsWith(`2${v}`)
     );
@@ -449,7 +477,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           .replace(/件/g, 'ដុំ');
 
         warehousingRemarks = `\t\t\t\t☘\t\t\t\t(${translatedRemarks})`;
-        if (!this.asAdmin && !/(托|件)/g.test(warehousingRemarks)) {
+        if (!this.asAdmin && !/托|件/g.test(warehousingRemarks)) {
           warehousingRemarks = '';
         }
       }
@@ -496,7 +524,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
               '\n'
             )
           : '',
-        `- ផ្សេងៗ: ${data.desc?.replace('到达', '到达(មកដល់)') || 'N/A'}\n`
+        `- ផ្សេងៗ: ${data.desc?.replace(/到達|到达/g, '$&(មកដល់)') || 'N/A'}\n`
       );
       maxFullCaption = fullCaption.substring(0, MAX_TEXT_LENGTH);
       caption = fullCaption.substring(0, MAX_CAPTION_LENGTH);
