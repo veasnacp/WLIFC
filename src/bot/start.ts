@@ -29,8 +29,6 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
-import { markdown } from './extensions/markdown';
-import { splitTextWithEntities } from './utils';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -144,6 +142,32 @@ export const alertNoPermissionMessage = async (
     { parse_mode: 'HTML' }
   );
 };
+
+async function decodeBarcode(imagePath) {
+  try {
+    // 1. Load the image using Jimp
+    const image = await Jimp.read(imagePath);
+    const { data, width, height } = image.bitmap;
+
+    // 2. Convert image data to a format ZXing understands
+    // We use RGBLuminanceSource which takes a Uint8ClampedArray
+    const luminanceSource = new RGBLuminanceSource(data, width, height);
+    const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+
+    // 3. Initialize the reader
+    const reader = new MultiFormatReader();
+
+    // 4. Decode the barcode/QR code
+    const result = reader.decode(binaryBitmap);
+
+    console.log('Barcode Format:', result.getBarcodeFormat());
+    console.log('Extracted Data:', result.getText());
+
+    return result.getText();
+  } catch (err) {
+    console.error('Error decoding barcode:', err.message);
+  }
+}
 
 export class WLCheckerBot extends WLCheckerBotSendData {
   commandsAdmin = [
@@ -466,10 +490,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               }
               return `🧑 **${u.fullnameWithUsername}**\n `.concat(
                 logging.join('\n').replaceAll(today, 'TODAY'),
-                hasPrev ? `/getLoggingId${u.id}` : ''
+                hasPrev ? `\n/getLoggingId${u.id}` : ''
               );
             })
-            .join('\n')
+            .join('\n\n')
         : 'Nobody actives today.';
 
       await this.sendLongMessageV2(
@@ -898,11 +922,11 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       const nameWithChatId = fullname + '|' + chatId;
       const currentDateString = dayjs().format('YYYY-MM-DD hh:mm:ss A');
-      const textLog = text.startsWith('/') ? text : `<code>${text}</code>`;
+      const textLog = text.startsWith('/') ? text : `\`${text}\``;
       const logging = [
-        'message',
+        'msg',
         textLog,
-        'by user:',
+        'from user:',
         nameWithChatId,
         'at',
         currentDateString,
@@ -911,7 +935,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       if (this.currentDate.day() === new Date().getDate()) {
         const activeUser = this.activeUserMap.get(userId);
-        if (!this.asAdmin) {
+        if (!this.asAdmin && text) {
           delete logging[2];
           delete logging[3];
           this.activeUserMap.set(userId, {
@@ -929,8 +953,11 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         this.activeUserMap.clear();
       }
 
+      const isPublicCommands = ['/start', '/help'].some((t) =>
+        text.startsWith(t)
+      );
+
       let isUniqueCommand = [
-        '/start',
         '/menu',
         '/add',
         '/remove',
@@ -944,7 +971,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         '/stg',
         '/settings',
       ].some((t) => text.startsWith(t));
-      if (isUniqueCommand && !this.asAdmin) {
+      if (!isPublicCommands && isUniqueCommand && !this.asAdmin) {
         await this.alertNoPermissionMessage(chatId);
         return;
       }
@@ -962,7 +989,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           );
         }
       }
-      if (!isUniqueCommand && text) {
+      if (!isPublicCommands && !isUniqueCommand && text) {
         const logCode = text.startsWith('/') ? text.slice(1) : text;
         await this.onTextCheckLogCodeHandler(msg, logCode);
       }
@@ -972,14 +999,17 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       const stickerId = msg.sticker?.file_id;
       const stickerSet = msg.sticker?.set_name;
       if (this.asAdmin) {
-        this.logger.info(`Sticker ID: ${stickerId}`);
-        this.logger.info(`From Set: ${stickerSet}`);
         // The bot will reply with the ID so you can copy it easily
         bot.sendMessage(
           msg.chat.id,
-          `The ID for this sticker is:\n\`${stickerId}\``,
+          ''.concat(
+            `Sticker ID: \`${stickerId}\`\n`,
+            `From Set: ${stickerSet}`
+          ),
           { parse_mode: 'Markdown' }
         );
+      } else if (stickerId) {
+        bot.sendSticker(msg.chat.id, stickerId);
       }
     });
     bot.on('animation', (msg) => {
@@ -989,12 +1019,17 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       this.refreshTypeMember(msg.chat);
       if (this.asAdmin && fileId) {
         this.logger.info(`✅ Received GIF!`);
-        this.logger.info(`File ID: ${fileId}`);
-        this.logger.info(`File Unique ID: ${fileUniqueId}`);
         // You can now save this fileId to your Map or Database
-        bot.sendMessage(msg.chat.id, `Got it! The file_id is: \`${fileId}\``, {
-          parse_mode: 'Markdown',
-        });
+        bot.sendMessage(
+          msg.chat.id,
+          ''.concat(
+            `GIF File ID: \`${fileId}\`\n`,
+            `File Unique ID: \`${fileUniqueId}\``
+          ),
+          {
+            parse_mode: 'Markdown',
+          }
+        );
       }
     });
 
@@ -1011,6 +1046,9 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           '🧐 Scanning image, please wait...'
         );
         const fileLink = await bot.getFileLink(fileId);
+        if (fileLink) {
+          return await decodeBarcode(fileLink);
+        }
         const image = await Jimp.read(fileLink);
         const { width, height, data } = image.bitmap;
 
@@ -1038,8 +1076,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         // Decode and respond
         const result = reader.decode(bitmap);
         const logCode = result.getText().trim().split('-')[0];
+        this.logger.info(`Result from image: ${result.getText()}`);
+        this.logger.info(`✅ Detected code from image: ${logCode}`);
 
-        bot
+        await bot
           .editMessageText(`លេខកូដ: \`${logCode || 'រកអត់ឃើញ'}\``, {
             chat_id: loadingMessage.chat.id,
             message_id: loadingMessage.message_id,
@@ -1048,6 +1088,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           .catch();
         await this.onTextCheckLogCodeHandler(msg, logCode);
       } catch (err: any) {
+        this.logger.error(err.message);
         if (
           err.name === 'NotFoundException' ||
           err.message.includes('No MultiFormat Readers')
@@ -1058,7 +1099,6 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               '❌ No barcode or QR code detected. Try a clearer or closer photo.'
           );
         } else {
-          this.logger.error(err.message);
           bot.sendMessage(
             chatId,
             '⚠️ An error occurred while processing the image.'
