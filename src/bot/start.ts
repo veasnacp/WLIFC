@@ -15,6 +15,7 @@ import path from 'path';
 import {
   AdminInlineKeyboardAction,
   adminInlineKeyboardButtons,
+  deleteInlineKeyboardButton,
   sendMessageOptions,
 } from './send-options';
 import { broadcastByFileId } from './notifications';
@@ -29,6 +30,7 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
+import { escapeMarkdownV2 } from './extensions/markdown';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -142,32 +144,6 @@ export const alertNoPermissionMessage = async (
     { parse_mode: 'HTML' }
   );
 };
-
-async function decodeBarcode(imagePath) {
-  try {
-    // 1. Load the image using Jimp
-    const image = await Jimp.read(imagePath);
-    const { data, width, height } = image.bitmap;
-
-    // 2. Convert image data to a format ZXing understands
-    // We use RGBLuminanceSource which takes a Uint8ClampedArray
-    const luminanceSource = new RGBLuminanceSource(data, width, height);
-    const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
-
-    // 3. Initialize the reader
-    const reader = new MultiFormatReader();
-
-    // 4. Decode the barcode/QR code
-    const result = reader.decode(binaryBitmap);
-
-    console.log('Barcode Format:', result.getBarcodeFormat());
-    console.log('Extracted Data:', result.getText());
-
-    return result.getText();
-  } catch (err) {
-    console.error('Error decoding barcode:', err.message);
-  }
-}
 
 export class WLCheckerBot extends WLCheckerBotSendData {
   commandsAdmin = [
@@ -537,12 +513,14 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       const member = { ...this.activeUserMap.get(id) };
       if (member?.id) {
         const logging = member.logging || [];
-        member.id = '```' + `${userId}` + '```';
+        member.id = `\`${userId}\``;
         delete member.logging;
         const today = dayjs().format('YYYY-MM-DD');
         const message = ''.concat(
+          '>>',
           JSON.stringify(member, null, 2),
-          `\n\n*Logging:*\n`,
+          '>>',
+          `\n\n**Logging:**\n`,
           logging.join('\n').replaceAll(today, 'TODAY')
         );
         return await this.sendLongMessageV2(
@@ -578,6 +556,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                     },
                   ];
                 }),
+                [deleteInlineKeyboardButton],
               ],
             },
           })
@@ -831,18 +810,18 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       }
     });
 
-    bot.onText(/\/start/, (msg) => {
-      const chatId = msg.chat.id;
-
-      bot.sendMessage(
-        chatId,
-        `សួស្តី! ${msg.chat.first_name}\nសូមបញ្ចូលលេខបុង... 👇👇👇`,
-        {
-          reply_markup: {
-            remove_keyboard: true,
-          },
-        }
-      );
+    bot.onText(/\/start/, async (msg) => {
+      const {
+        fullname,
+        user: { id: chatId },
+      } = this.currentUser;
+      const textParseMode = this.parseModeTo(null, false)
+        .text((p) => {
+          p.text('សួស្តី! '.concat(p.b(p.m(fullname, chatId))));
+        })
+        .newline()
+        .text('សូមបញ្ចូលលេខបុង... 👇👇👇');
+      await this.sendLongMessageV2(chatId, textParseMode.build());
     });
 
     // Set new WL cookie
@@ -922,11 +901,45 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       const nameWithChatId = fullname + '|' + chatId;
       const currentDateString = dayjs().format('YYYY-MM-DD hh:mm:ss A');
-      const textLog = text.startsWith('/') ? text : `\`${text}\``;
+      let textLog = text.startsWith('/') ? text : `\`${text}\``;
+
+      const custom_emoji_ids = [] as string[];
+      const emoji_texts = [] as string[];
+
+      if (msg.entities) {
+        msg.entities.forEach(async (entity) => {
+          if (entity.type === 'custom_emoji') {
+            if (entity.custom_emoji_id)
+              custom_emoji_ids.push(entity.custom_emoji_id);
+          }
+        });
+      } else if (text.length > 1 && text.length <= 5) {
+        // 1. Remove all emoji-like characters using Unicode Property Escapes
+        // We use 'u' flag for unicode support.
+        // \s matches whitespace, so we allow spaces between emojis.
+        const nonEmojiRegex = /[^\p{Extended_Pictographic}\s]/gu;
+
+        // 2. Remove things that look like emojis but are actually numbers/symbols (0-9, #, *)
+        const cleanText = text.replace(nonEmojiRegex, '');
+        emoji_texts.push(cleanText);
+      }
+
+      if (this.asAdmin && custom_emoji_ids.length)
+        await bot.sendMessage(
+          chatId,
+          custom_emoji_ids.map((id) => `Emoji ID: \`${id}\``).join('\n'),
+          {
+            parse_mode: 'MarkdownV2',
+          }
+        );
+      else if (emoji_texts.length) {
+        await bot.sendMessage(chatId, emoji_texts.join(''));
+      }
+
       const logging = [
         'msg',
         textLog,
-        'from user:',
+        'from',
         nameWithChatId,
         'at',
         currentDateString,
@@ -952,6 +965,8 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       } else {
         this.activeUserMap.clear();
       }
+
+      if (custom_emoji_ids.length || emoji_texts.length) return;
 
       const isPublicCommands = ['/start', '/help'].some((t) =>
         text.startsWith(t)
@@ -1046,9 +1061,6 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           '🧐 Scanning image, please wait...'
         );
         const fileLink = await bot.getFileLink(fileId);
-        if (fileLink) {
-          return await decodeBarcode(fileLink);
-        }
         const image = await Jimp.read(fileLink);
         const { width, height, data } = image.bitmap;
 

@@ -28,7 +28,8 @@ import type {
 import { sendMessageOptions } from './send-options';
 import { logger } from '../utils/logger';
 import { markdown } from './extensions/markdown';
-import { splitTextWithEntities } from './utils';
+import { ParseModeConvert, splitTextWithEntities } from './utils';
+import { html } from './extensions/html';
 
 export function getFullname(chat: TelegramBot.Chat) {
   const { first_name, last_name, username } = chat;
@@ -334,6 +335,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       alertMessage,
     ] as const;
   }
+  parseModeTo(mode: ParseModeConvert['mode'] = null, with_escape = true) {
+    return new ParseModeConvert(mode, with_escape);
+  }
   async sendLongMessage(
     chatId: number,
     longText: string,
@@ -363,22 +367,35 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     }
   }
   async sendLongMessageV2(
-    chatId: number,
+    chatId: TelegramBot.ChatId,
     longText: string,
     options?: TelegramBot.SendMessageOptions,
     limit = MAX_TEXT_LENGTH
   ) {
-    const [text, entities] = markdown.parse(longText);
+    const [text, entities] = (() => {
+      if (options?.parse_mode === 'HTML') {
+        return html.parse(longText);
+      }
+      return markdown.parse(longText);
+    })();
     options = { ...options, entities, parse_mode: undefined };
-    if (text.length <= limit) {
+    limit = limit > MAX_TEXT_LENGTH ? MAX_TEXT_LENGTH : limit;
+    if (longText.length <= limit) {
       return await this.bot.sendMessage(chatId, text, options);
     }
     let i = 0;
     const messages = [];
-    for (const [_message, _entities] of splitTextWithEntities(text, entities)) {
+    const textWithEntities = splitTextWithEntities(text, entities, limit);
+    this.logger.info(text.length, entities.length, textWithEntities);
+    for (const [_message, _entities] of textWithEntities) {
+      this.logger.info(_message.length, _message, _entities);
       try {
-        const message = await this.bot.sendMessage(chatId, _message, options);
+        const message = await this.bot.sendMessage(chatId, _message, {
+          ...options,
+          entities: _entities,
+        });
         messages.push(message);
+        await new Promise((resolve) => setTimeout(resolve, 50));
       } catch (error: any) {
         this.logger.error(`index ${i}`, error.message);
       }
@@ -466,6 +483,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         data.goods_numbers;
       const isSplitting = goods_numbers && goods_numbers.length > 1;
       let warehousingRemarks = data.warehousingremarks || '';
+      let [container_code, ...container_date] = data.container_num?.split('-');
 
       if (warehousingRemarks) {
         if (!this.asAdmin) {
@@ -481,46 +499,47 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           warehousingRemarks = '';
         }
       }
+      const pm = this.parseModeTo(null, false);
       fullCaption = ''.concat(
-        `- លេខបុង: ${isTrackingNumber ? data.logcode : logCodeFromCommand} ✅ ${
-          isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'
-        }: ${
-          data.container_num?.split('-').slice(1).join('.') ||
-          'N/A(ប្រហែលជើងអាកាស)'
+        `- លេខបុង: ${pm.c(
+          isTrackingNumber ? data.logcode : logCodeFromCommand
+        )} ✅ ${isSplitting ? 'ទូរចុងក្រោយ' : 'ទូរ'}: ${
+          container_date.join('.') || 'N/A(ប្រហែលជើងអាកាស)'
         }\n`,
-        `- កូដអីវ៉ាន់: ${data.mark_name}\n`,
+        `- កូដអីវ៉ាន់: #${data.mark_name}\n`,
         `- ចំនួន: ${data.goods_number}${warehousingRemarks}\n`,
         isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
         `- ទម្ងន់: ${
           data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
         }kg\n`,
-        `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³\n`,
-        `- ម៉ែត្រគូបផ្សេងគ្នា: ${
+        `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³`,
+        `${
           data.volume_record?.trim()
             ? ''.concat(
-                '[\n',
-                data.volume_record
-                  .split('<br>')
-                  .filter(Boolean)
-                  .map((v) => {
-                    v = v.includes('=') ? v.split('=')[0] : v;
-                    const total = v
-                      .split('x')
-                      .reduce((acc, p) => acc * Number(p), 1);
-                    return `\t\t\t\t\t\t${v} = ${total.toFixed(3)}`;
-                  })
-                  .join('\n'),
-                '\n\t\t\t]'
+                pm.bl(
+                  'ម៉ែត្រគូបផ្សេងគ្នា:\n' +
+                    data.volume_record
+                      .split('<br>')
+                      .filter(Boolean)
+                      .map((v) => {
+                        v = v.includes('=') ? v.split('=')[0] : v;
+                        const total = v
+                          .split('x')
+                          .reduce((acc, p) => acc * Number(p), 1);
+                        return `\t\t\t${v} = ${total.toFixed(3)}`;
+                      })
+                      .join('\n')
+                )
               )
-            : 'N/A'
-        }\n`,
+            : '\n- ម៉ែត្រគូបផ្សេងគ្នា: N/A'
+        }`,
         `- ទំនិញ: ${data.goods_name}${
           data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
         }\n`,
         this.asAdmin || this.asAdminMember || this.asMemberContainerController
           ? ''.concat(
               '- ទូរកុងតឺន័រ: ',
-              data.container_num?.split('-')[0] || 'N/A(ប្រហែលជើងអាកាស)',
+              container_code ? `#${container_code}` : 'N/A(ប្រហែលជើងអាកាស)',
               '\n'
             )
           : '',
@@ -537,7 +556,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     data: DataExpand | undefined,
     afterSendCaption?: VoidFunction
   ) {
-    await this.sendLongMessage(
+    await this.sendLongMessageV2(
       chatId,
       `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${fullCaption}`,
       sendMessageOptions()
@@ -560,7 +579,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     logCodeFromCommand: string,
     messageIdShowMore?: string | number
   ) {
-    return await this.sendLongMessage(
+    return await this.sendLongMessageV2(
       chat.id,
       fullCaption,
       sendMessageOptions(
@@ -579,17 +598,18 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     reply_to_message_id?: number
   ) {
     if (data) {
-      await this.bot.sendMessage(
+      const pm = this.parseModeTo('HTML', false);
+      await this.sendLongMessageV2(
         chatId,
-        ''
-          .concat(
-            `<b>Container Number:</b> <code>${
-              data.container_num || 'N/A(ប្រហែលជើងអាកាស)'
-            }</code>\n`,
-            `<b>Member Name:</b> ${data.member_name}\n`,
-            `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
-            data.from_address?.trim() && data.to_address?.trim()
-              ? ''.concat(
+        ''.concat(
+          `<b>Container Number:</b> <code>${
+            data.container_num || 'N/A(ប្រហែលជើងអាកាស)'
+          }</code>\n`,
+          `<b>Member Name:</b> ${data.member_name}\n`,
+          `<b>开单员:</b> ${data.delivery_manager_name || 'N/A'}\n`,
+          data.from_address?.trim() && data.to_address?.trim()
+            ? pm.bl(
+                ''.concat(
                   `<b>Form Name:</b> ${data.from_name}${
                     data.from_phone ? ` (${data.from_phone})` : ''
                   }\n`,
@@ -599,35 +619,39 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
                   }\n`,
                   `<b>To Address:</b> ${data.to_address}\n`
                 )
-              : '',
-            `<b>Total: <code>$${Number(data.total).toFixed(2)}</code></b> (${
-              !!data.payment_status ? 'Paid' : 'Unpaid'
-            })\n`,
-            data.expresstracking
-              ? `\n===== Express Tracking =====\n`.concat(
-                  removeDuplicateObjArray(
-                    JSON.parse(data.expresstracking) as Array<
-                      Record<'time' | 'text' | 'remark', string>
-                    >,
-                    'text'
-                  )
-                    .map(
-                      (d) =>
-                        `<b>${d.text}:</b> ${d.time}${
-                          d.remark ? `(${d.remark})` : ''
-                        }`
-                    )
-                    .join('\n')
+              )
+            : '',
+          ''.concat(
+            pm.b('Total: ' + pm.sp(pm.u('$' + Number(data.total).toFixed(2)))),
+            ` (${!!data.payment_status ? 'Paid' : 'Unpaid'})\n`
+          ),
+          // `<b>Total: <code>$${Number(data.total).toFixed(2)}</code></b> (${
+          //   !!data.payment_status ? 'Paid' : 'Unpaid'
+          // })\n`,
+          data.expresstracking
+            ? `\n===== Express Tracking =====\n`.concat(
+                removeDuplicateObjArray(
+                  JSON.parse(data.expresstracking) as Array<
+                    Record<'time' | 'text' | 'remark', string>
+                  >,
+                  'text'
                 )
-              : '',
-            data.sub_logcode
-              ? `\n\n${data.sub_logcode
-                  .split('@')
-                  .map((v, i) => `${i + 1}. <code>${v}</code>`)
-                  .join('\n')}`
-              : ''
-          )
-          .substring(0, MAX_TEXT_LENGTH),
+                  .map(
+                    (d) =>
+                      `<b>${d.text}:</b> ${d.time}${
+                        d.remark ? `(${d.remark})` : ''
+                      }`
+                  )
+                  .join('\n')
+              )
+            : '',
+          data.sub_logcode
+            ? `\n\n${data.sub_logcode
+                .split('@')
+                .map((v, i) => `${i + 1}. <code>${v}</code>`)
+                .join('\n')}`
+            : ''
+        ),
         sendMessageOptions({
           parse_mode: 'HTML',
           reply_to_message_id,

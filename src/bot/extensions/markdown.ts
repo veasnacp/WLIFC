@@ -5,25 +5,28 @@ import {
   stripText,
   withinSurrogate,
 } from '../helpers';
+import { MessageEntity } from '../types';
 
-export const DEFAULT_DELIMITERS: { [key: string]: TelegramBot.MessageEntity } =
-  {
-    '**': { type: 'bold', offset: 0, length: 0 },
-    __: { type: 'italic', offset: 0, length: 0 },
-    '~~': { type: 'strikethrough', offset: 0, length: 0 },
-    '`': { type: 'code', offset: 0, length: 0 },
-    '```': { type: 'pre', offset: 0, length: 0 },
-    '||': { type: 'spoiler', offset: 0, length: 0 },
-  };
+export const DEFAULT_DELIMITERS: { [key: string]: MessageEntity } = {
+  '**': { type: 'bold', offset: 0, length: 0 },
+  _: { type: 'italic', offset: 0, length: 0 },
+  __: { type: 'underline', offset: 0, length: 0 },
+  '~~': { type: 'strikethrough', offset: 0, length: 0 },
+  '`': { type: 'code', offset: 0, length: 0 },
+  '```': { type: 'pre', offset: 0, length: 0 },
+  '||': { type: 'spoiler', offset: 0, length: 0 },
+  '>>': { type: 'blockquote', offset: 0, length: 0 },
+  '*>>': { type: 'expandable_blockquote', offset: 0, length: 0 },
+};
 
-export const DEFAULT_URL_RE = /\Щ([^\Щ]*?)\]\(([\s\S]*?)\)/;
+export const DEFAULT_URL_RE = /\[([^\]]+)\]\(([^)]+)\)/;
 export function defaultUrlFormat(text: string, link: string) {
   return `[${text}](${link})`;
 }
 
 export function parse(
   message: string,
-  delimiters: { [key: string]: TelegramBot.MessageEntity } | null = null,
+  delimiters: { [key: string]: MessageEntity } | null = null,
   url_re: RegExp | null = null
 ): [string, TelegramBot.MessageEntity[]] {
   if (!message) {
@@ -45,11 +48,11 @@ export function parse(
   const delimRe = new RegExp(
     Object.keys(delimiters)
       .sort((a, b) => b.length - a.length)
-      .map((k) => `(${escapeRegExp(k)})`)
+      .map((k) => `(${escapeMarkdownV2(k)})`)
       .join('|')
   );
 
-  const result: TelegramBot.MessageEntity[] = [];
+  const entities: MessageEntity[] = [];
   let i = 0;
   message = addSurrogate(message);
 
@@ -67,7 +70,7 @@ export function parse(
           text +
           message.substring(end + delim.length);
 
-        for (const ent of result) {
+        for (const ent of entities) {
           if (ent.offset + ent.length > i) {
             if (
               ent.offset <= i &&
@@ -83,18 +86,43 @@ export function parse(
         const isCodeBlock =
           EntityType.type === 'code' || EntityType.type === 'pre';
         if (isCodeBlock) {
-          result.push({
+          entities.push({
             ...EntityType,
             offset: i,
             length: text.length,
           });
         } else {
-          result.push({ ...EntityType, offset: i, length: text.length });
+          entities.push({ ...EntityType, offset: i, length: text.length });
         }
 
         if (isCodeBlock) {
           i = end - delim.length;
         }
+        continue;
+      }
+    } else if (message.substring(i).trim().startsWith('$')) {
+      const CASH_TAG_RE =
+        /(?<!\w)\$([A-Z]{1,10})(?:@([a-zA-Z0-9_]{5,32}))?(?!\w)/;
+      const cashTagMatch = message.substring(i).match(CASH_TAG_RE);
+      if (cashTagMatch && message.substring(i).startsWith(cashTagMatch[0])) {
+        const cashTagText = cashTagMatch[0];
+        message =
+          message.substring(0, i) +
+          cashTagText +
+          message.substring(i + cashTagMatch[0].length);
+
+        const delimSize = cashTagMatch[0].length - cashTagText.length;
+        for (const ent of entities) {
+          if (ent.offset + ent.length > i) {
+            ent.length -= delimSize;
+          }
+        }
+        entities.push({
+          type: 'cashtag',
+          offset: i,
+          length: cashTagText.length,
+        });
+        i += cashTagText.length;
         continue;
       }
     } else if (url_re) {
@@ -108,12 +136,12 @@ export function parse(
           message.substring(i + urlMatch[0].length);
 
         const delimSize = urlMatch[0].length - urlText.length;
-        for (const ent of result) {
+        for (const ent of entities) {
           if (ent.offset + ent.length > i) {
             ent.length -= delimSize;
           }
         }
-        result.push({
+        entities.push({
           type: 'text_link',
           offset: i,
           length: urlText.length,
@@ -126,14 +154,14 @@ export function parse(
     i++;
   }
 
-  const strippedText = stripText(message, result as any);
-  return [delSurrogate(strippedText), result];
+  const strippedText = stripText(message, entities);
+  return [delSurrogate(strippedText), entities as TelegramBot.MessageEntity[]];
 }
 
 export function unparse(
   text: string,
-  entities: Iterable<TelegramBot.MessageEntity>,
-  delimiters: { [key: string]: TelegramBot.MessageEntity } | null = null
+  entities: Iterable<MessageEntity>,
+  delimiters: { [key: string]: MessageEntity } | null = null
 ): string {
   if (!text || !entities) {
     return text;

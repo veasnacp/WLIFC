@@ -1,3 +1,9 @@
+import type { MessageEntity as TMessageEntity } from 'node-telegram-bot-api';
+
+export type MessageEntity = Omit<TMessageEntity, 'type'> & {
+  type: TMessageEntity['type'] | 'blockquote' | 'expandable_blockquote';
+};
+
 export type ConfigCache = {
   cookie: string;
   ADMIN_LIST: string[];

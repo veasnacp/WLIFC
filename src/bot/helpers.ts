@@ -1,4 +1,4 @@
-import TelegramBot from 'node-telegram-bot-api';
+import { MessageEntity } from './types';
 
 const { createHash, randomBytes } = process.getBuiltinModule('crypto');
 const fs = process.getBuiltinModule('fs');
@@ -67,10 +67,7 @@ export function withinSurrogate(
   );
 }
 
-export function stripText(
-  text: string,
-  entities: TelegramBot.MessageEntity[]
-): string {
+export function stripText(text: string, entities: MessageEntity[]): string {
   if (!entities) {
     return text.trim();
   }
