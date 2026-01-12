@@ -30,6 +30,7 @@ import { logger } from '../utils/logger';
 import { markdown } from './extensions/markdown';
 import { ParseModeConvert, splitTextWithEntities } from './utils';
 import { html } from './extensions/html';
+import { SPECIAL_CHAR_RE } from '../utils/re';
 
 export function getFullname(chat: TelegramBot.Chat) {
   const { first_name, last_name, username } = chat;
@@ -414,9 +415,11 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     const isOldLogCode = logCode.startsWith('1757');
     const isSubLogCode =
       isTrackingNumber && logCode.length >= 12 && logCode.length <= 16;
-    const isValidLogCode = isTrackingNumber
-      ? logCode.length >= 12 && logCode.length <= 16
-      : isNewLogCode;
+    const hasSpecialChar = SPECIAL_CHAR_RE.test(logCode);
+    const isValidLogCode =
+      (isTrackingNumber
+        ? logCode.length >= 12 && logCode.length <= 16
+        : isNewLogCode) && !hasSpecialChar;
     const options = {
       isNearToNewLogCode,
       isTrackingNumber: isTrackingNumber && !isNearToNewLogCode,
@@ -440,11 +443,30 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     }
     return options;
   }
-  saveCacheData(data?: DataExpand, hasSubLogCodeCache?: boolean) {
+  saveCacheData(
+    data?: DataExpand,
+    hasSubLogCodeCache?: boolean,
+    refreshData?: boolean
+  ) {
     const _logCode = data?.logcode;
     if (!_logCode) return;
 
-    if (!hasSubLogCodeCache && !this.cacheDataMap.get(_logCode)) {
+    const userId = this.currentUser.user.id;
+    data['users'] = {
+      ...data.users,
+    };
+    const userDataMessage = data['users'][userId];
+    if (userId && data.message_id) {
+      data['users'][userId] = {
+        message_id: data.message_id,
+      };
+    }
+
+    if (
+      refreshData ||
+      !userDataMessage ||
+      (!hasSubLogCodeCache && !this.cacheDataMap.get(_logCode))
+    ) {
       this.cacheDataMap.set(_logCode, data);
       if (IS_DEV) {
         if (fs) {
@@ -482,20 +504,24 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
       const volume = Number(data.volume).toFixed(3);
+      let total_goods_number = 0;
       let total_volume_records = 0;
       const volume_records = data.volume_record
         .split('<br>')
         .filter(Boolean)
         .map((v) => {
           v = v.includes('=') ? v.split('=')[0] : v;
-          v = v.includes('-') ? v.replaceAll('-', 'x') : v;
-          const total = v
-            .split('x')
+          v = /\*|\-/.test(v) ? v.replace(/\*|\-/g, 'x') : v;
+          const volumes = v.split('x');
+          const num = Number(volumes[3] || 1);
+          total_goods_number += num;
+          const total = volumes
             .reduce((acc, p) => acc * Number(p), 1)
             .toFixed(3);
           total_volume_records += Number(total);
           return `\t\t\t${v} = ${total}`;
         });
+
       const isSplitting = goods_numbers && goods_numbers.length > 1;
       let warehousingRemarks = data.warehousingremarks || '';
       let [container_code, ...container_date] = data.container_num?.split('-');
@@ -533,20 +559,32 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
             ? ''.concat(
                 volume_records.length > 1
                   ? pm.bl(
-                      'ម៉ែត្រគូបផ្សេងគ្នា:\n' +
-                        volume_records.join('\n') +
-                        (total_volume_records > 0 &&
-                        total_volume_records.toFixed(2) !==
-                          Number(data.volume).toFixed(2)
+                      'ម៉ែត្រគូបផ្សេងគ្នា:\n'.concat(
+                        volume_records.join('\n'),
+                        total_volume_records > 0 &&
+                          total_volume_records.toFixed(3) !== volume &&
+                          total_volume_records.toFixed(2) !==
+                            Number(volume).toFixed(2)
                           ? ''.concat(
-                              `\n👉 សរុប: ${total_volume_records.toFixed(3)}m³`,
+                              `\n👉 ម៉ែត្រគូបសរុបជាក់ស្តែង: ${total_volume_records.toFixed(
+                                3
+                              )}m³`,
                               ` (ខុសពី ${volume}m³)`
                             )
-                          : '')
+                          : '',
+                        total_goods_number &&
+                          total_goods_number !== Number(data.goods_number)
+                          ? ''.concat(
+                              `\n👉 ចំនួនសរុបជាក់ស្តែង: ${total_goods_number}`
+                            )
+                          : ''
+                      )
                     )
-                  : `\n- ម៉ែត្រគូបផ្សេងគ្នា: ${volume_records.join('\n')}\n`
+                  : `\n- ម៉ែត្រគូបផ្សេងគ្នា: ${volume_records
+                      .join('\n')
+                      .trim()}\n`
               )
-            : '\n- ម៉ែត្រគូបផ្សេងគ្នា: N/A'
+            : '\n- ម៉ែត្រគូបផ្សេងគ្នា: N/A\n'
         }`,
         `- ទំនិញ: ${data.goods_name}${
           data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
@@ -573,7 +611,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     data: DataExpand | undefined,
     afterSendCaption?: VoidFunction
   ) {
-    await this.sendLongMessageV2(
+    const message = await this.sendLongMessageV2(
       chatId,
       `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${fullCaption}`,
       sendMessageOptions()
@@ -588,13 +626,17 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       );
     }
     afterSendCaption?.();
-    return { noImage: true };
+    return {
+      noImage: true,
+      message_id: (Array.isArray(message) ? message[0] : message).message_id,
+    };
   }
   async sendFullCaption(
     chat: TelegramBot.Chat,
     fullCaption: string,
     logCodeFromCommand: string,
-    messageIdShowMore?: string | number
+    messageIdShowMore?: string | number,
+    messageIdsForDelete?: string[]
   ) {
     return await this.sendLongMessageV2(
       chat.id,
@@ -604,6 +646,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           translateText: logCodeFromCommand,
           logCodeOrAndForShowMore: `${logCodeFromCommand}|${messageIdShowMore}`,
           chat,
+          messageIdsForDelete,
         },
         this.asAdmin
       )
@@ -683,6 +726,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
   ) {
     const chatId = msg.chat.id;
     let messageIdShowMore: number | undefined;
+    let messageIdsForDelete: string[] = [];
     let errorMessageId: number | undefined;
     let isError = false;
     const medias = chunkArray(media, 10);
@@ -704,6 +748,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           .sendMediaGroup(chatId, inputMedia)
           .then(async (sentMessages) => {
             messageIdShowMore = sentMessages[0].message_id;
+            messageIdsForDelete = sentMessages.map((m) => `${m.message_id}`);
             this.logger.success(
               justOne
                 ? `✅ Successfully sent an photo.`
@@ -741,7 +786,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           .catch();
       }
     }
-    return { errorMessageId, isError, messageIdShowMore };
+    return { errorMessageId, isError, messageIdShowMore, messageIdsForDelete };
   }
   findDataFromCache(
     logCode: string,
@@ -871,6 +916,20 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       options;
     const chat = msg.chat;
     const chatId = chat.id;
+
+    const reply_to_message_id = data?.users?.[chatId]?.message_id;
+    if (reply_to_message_id) {
+      await this.sendLongMessageV2(
+        chatId,
+        `<b>${this.currentUser.fullname}</b> អ្នកធ្លាប់រកម្តងរួចហើយ សូមចុចខាងលើនេះ👆👆👆 \n\n`.concat(
+          '<b>បើមិនមានសូមចុចខាងក្រោមនេះ:\n',
+          `👉 /w_refresh_data_${data.logcode}</b>`
+        ),
+        { parse_mode: 'HTML', reply_to_message_id }
+      );
+      return;
+    }
+
     let photos = [] as string[];
     let media = [] as TelegramBot.InputMedia[];
     if (data && typeof data.warehousing_pic === 'string') {
@@ -887,7 +946,6 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let messageIdShowMore = msg.message_id;
 
     if (fullCaption && photos.length === 0) {
-      this.saveCacheData(data, hasSubLogCodeCache);
       // Delete the temporary loading message
       const deleteLoadingMsg = async () => {
         if (loadingMsgId) {
@@ -900,16 +958,28 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         fullCaption,
         data,
         deleteLoadingMsg
-      );
+      ).then((dt) => {
+        if (data) data.message_id = dt.message_id;
+        this.saveCacheData(data, hasSubLogCodeCache);
+        return dt;
+      });
     }
-    const { isError, errorMessageId, ...other } = await this.sendMediaGroup(
-      msg,
-      data,
-      media
-    );
+    const { isError, errorMessageId, messageIdsForDelete, ...other } =
+      await this.sendMediaGroup(msg, data, media);
     messageIdShowMore = other.messageIdShowMore || messageIdShowMore;
-    if (fullCaption)
-      await this.sendFullCaption(chat, fullCaption, logCode, messageIdShowMore);
+    if (fullCaption) {
+      const message = await this.sendFullCaption(
+        chat,
+        fullCaption,
+        logCode,
+        messageIdShowMore,
+        messageIdsForDelete
+      );
+      if (data)
+        data.message_id = (
+          Array.isArray(message) ? message[0] : message
+        ).message_id;
+    }
     this.saveCacheData(data, hasSubLogCodeCache);
   }
   async onTextNumberAction(

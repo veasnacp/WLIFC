@@ -16,6 +16,13 @@ export type DataExpand = Data & {
   smallPackageGoodsNames?: string[];
   subLogCodes?: string[];
   tryToLoadImage?: boolean;
+  message_id?: number;
+  users?: Record<
+    string | number,
+    {
+      message_id?: number;
+    }
+  >;
 };
 
 export class WLLogistic {

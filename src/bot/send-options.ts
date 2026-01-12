@@ -11,6 +11,7 @@ export function sendMessageOptions(
       inlineKeyboardButtons: TelegramBot.InlineKeyboardButton[];
       translateText: string;
       logCodeOrAndForShowMore: string;
+      messageIdsForDelete: string[];
     }>,
   asAdmin?: boolean
 ) {
@@ -19,7 +20,13 @@ export function sendMessageOptions(
     inlineKeyboardButtons,
     translateText,
     logCodeOrAndForShowMore,
+    messageIdsForDelete,
   } = options || {};
+  if (messageIdsForDelete) {
+    deleteInlineKeyboardButton.callback_data = 'delete'.concat(
+      messageIdsForDelete.join('|')
+    );
+  }
   let defaultInlineKeyboardButtons = [deleteInlineKeyboardButton];
   if (inlineKeyboardButtons?.length) {
     defaultInlineKeyboardButtons.push(...inlineKeyboardButtons);

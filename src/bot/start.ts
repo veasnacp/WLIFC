@@ -10,7 +10,7 @@ import {
   WL_PUBLIC_URL,
 } from '../config/constants';
 import { WLLogistic } from '../wl/edit';
-import { chunkArray, isArray, isNumber, isObject } from '../utils/is';
+import { chunkArray, isArray, isNumber, isObject, sleep } from '../utils/is';
 import path from 'path';
 import {
   AdminInlineKeyboardAction,
@@ -30,7 +30,6 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
-import { escapeMarkdownV2 } from './extensions/markdown';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -507,7 +506,6 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     matchOrId?: string | number | RegExpExecArray | null
   ) => {
     const userId = typeof matchOrId === 'object' ? matchOrId?.[1] : matchOrId;
-    console.info('userId', userId, matchOrId);
     if (isNumber(userId)) {
       const id = Number(userId);
       const member = { ...this.activeUserMap.get(id) };
@@ -657,9 +655,25 @@ export class WLCheckerBot extends WLCheckerBotSendData {
         if (chatId) {
           this.refreshTypeMember(msg.chat);
           const { fullname, fullnameWithUsername } = this.currentUser;
-          if (action === 'delete') {
+          if (action?.startsWith('delete')) {
             try {
-              this.bot.deleteMessage(chatId, msg.message_id);
+              const messageIdsForDelete = action
+                .replace('delete', '')
+                .split('|');
+              if (messageIdsForDelete.length) {
+                for (let i = 0; i < messageIdsForDelete.length; i++) {
+                  const messageId = Number(messageIdsForDelete[i]);
+                  try {
+                    await this.bot.deleteMessage(chatId, messageId);
+                  } catch (error) {
+                    this.logger.error(
+                      `Delete message id: ${messageId} ` +
+                        (error as Error).message
+                    );
+                  }
+                }
+              }
+              await this.bot.deleteMessage(chatId, msg.message_id);
             } catch (error) {
               this.logger.error('Delete message: ' + (error as Error).message);
             }
@@ -721,16 +735,26 @@ export class WLCheckerBot extends WLCheckerBotSendData {
             await this.getLoggingByUserId(msg, userId);
           } else if (action?.startsWith('edit_user_')) {
             const [_action, userId] = action.split('|');
+            const key = action.includes('ban')
+              ? 'bannedUsers'
+              : 'WL_ALLOWED_MEMBERS';
+            const type = action.includes('remove') ? 'remove' : 'add';
+            if (key === 'bannedUsers') {
+              const member = this.activeUserMap.get(Number(userId));
+              if (member)
+                this.activeUserMap.set(Number(userId), {
+                  ...member,
+                  banned: type === 'add',
+                });
+            }
             if (isNumber(userId)) {
               await configUserWithAdminPermission(
                 this.bot,
                 msg,
                 this.config,
                 {
-                  key: action.includes('ban')
-                    ? 'bannedUsers'
-                    : 'WL_ALLOWED_MEMBERS',
-                  type: action.includes('remove') ? 'remove' : 'add',
+                  key,
+                  type,
                   id_username_or_first_name: userId,
                 },
                 this.asAdmin
@@ -938,7 +962,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       const logging = [
         'msg',
-        textLog,
+        text,
         'from',
         nameWithChatId,
         'at',
@@ -949,6 +973,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       if (this.currentDate.day() === new Date().getDate()) {
         const activeUser = this.activeUserMap.get(userId);
         if (!this.asAdmin && text) {
+          logging[1] = textLog;
           delete logging[2];
           delete logging[3];
           this.activeUserMap.set(userId, {
@@ -968,7 +993,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
 
       if (custom_emoji_ids.length || emoji_texts.length) return;
 
-      const isPublicCommands = ['/start', '/help'].some((t) =>
+      const isPublicCommands = ['/start', '/help', '/w_'].some((t) =>
         text.startsWith(t)
       );
 
@@ -1007,6 +1032,18 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       if (!isPublicCommands && !isUniqueCommand && text) {
         const logCode = text.startsWith('/') ? text.slice(1) : text;
         await this.onTextCheckLogCodeHandler(msg, logCode);
+      } else if (text.startsWith('/w_refresh_data_')) {
+        const logCode = text.split('w_refresh_data_')[1].trim();
+        let data = this.cacheDataMap.get(logCode);
+        if (data && data.users?.[chatId]) {
+          if ('message_id' in data) delete data.message_id;
+          delete data.users[chatId];
+          this.cacheDataMap.set(logCode, data);
+          this.saveCacheData(data);
+        }
+        await this.onTextCheckLogCodeHandler(msg, logCode);
+        data = this.cacheDataMap.get(logCode);
+        this.saveCacheData(data, false, true);
       }
     });
 
