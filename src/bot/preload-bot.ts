@@ -481,6 +481,21 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         'goods_numbers' in data &&
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
+      const volume = Number(data.volume).toFixed(3);
+      let total_volume_records = 0;
+      const volume_records = data.volume_record
+        .split('<br>')
+        .filter(Boolean)
+        .map((v) => {
+          v = v.includes('=') ? v.split('=')[0] : v;
+          v = v.includes('-') ? v.replaceAll('-', 'x') : v;
+          const total = v
+            .split('x')
+            .reduce((acc, p) => acc * Number(p), 1)
+            .toFixed(3);
+          total_volume_records += Number(total);
+          return `\t\t\t${v} = ${total}`;
+        });
       const isSplitting = goods_numbers && goods_numbers.length > 1;
       let warehousingRemarks = data.warehousingremarks || '';
       let [container_code, ...container_date] = data.container_num?.split('-');
@@ -512,24 +527,24 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         `- ទម្ងន់: ${
           data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
         }kg\n`,
-        `- ម៉ែត្រគូបសរុប: ${Number(data.volume).toFixed(3)}m³`,
+        `- ម៉ែត្រគូបសរុប: ${volume}m³`,
         `${
           data.volume_record?.trim()
             ? ''.concat(
-                pm.bl(
-                  'ម៉ែត្រគូបផ្សេងគ្នា:\n' +
-                    data.volume_record
-                      .split('<br>')
-                      .filter(Boolean)
-                      .map((v) => {
-                        v = v.includes('=') ? v.split('=')[0] : v;
-                        const total = v
-                          .split('x')
-                          .reduce((acc, p) => acc * Number(p), 1);
-                        return `\t\t\t${v} = ${total.toFixed(3)}`;
-                      })
-                      .join('\n')
-                )
+                volume_records.length > 1
+                  ? pm.bl(
+                      'ម៉ែត្រគូបផ្សេងគ្នា:\n' +
+                        volume_records.join('\n') +
+                        (total_volume_records > 0 &&
+                        total_volume_records.toFixed(2) !==
+                          Number(data.volume).toFixed(2)
+                          ? ''.concat(
+                              `\n👉 សរុប: ${total_volume_records.toFixed(3)}m³`,
+                              ` (ខុសពី ${volume}m³)`
+                            )
+                          : '')
+                    )
+                  : `\n- ម៉ែត្រគូបផ្សេងគ្នា: ${volume_records.join('\n')}\n`
               )
             : '\n- ម៉ែត្រគូបផ្សេងគ្នា: N/A'
         }`,
@@ -539,7 +554,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         this.asAdmin || this.asAdminMember || this.asMemberContainerController
           ? ''.concat(
               '- ទូរកុងតឺន័រ: ',
-              container_code ? `#${container_code}` : 'N/A(ប្រហែលជើងអាកាស)',
+              container_code
+                ? `#${container_code.trim()}`
+                : 'N/A(ប្រហែលជើងអាកាស)',
               '\n'
             )
           : '',
