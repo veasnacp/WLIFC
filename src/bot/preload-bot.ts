@@ -1,4 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
+import Telecam from '@telecam';
 import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
@@ -179,7 +180,7 @@ export class WLCheckerBotPreLoad {
   asMemberContainerController = false;
   asMemberAsEmployee = false;
   currentUser = {} as ReturnType<typeof getFullname>;
-  constructor(public bot: TelegramBot) {
+  constructor(public bot: Telecam.Client) {
     this.currentDate = this.getCurrentData();
     // this.publicPath = path.join(process.cwd(), 'public');
     this.cachePath = path.join(process.cwd(), 'cache');
@@ -303,7 +304,7 @@ export class WLCheckerBotPreLoad {
 
 export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
   wl_cookie = process.env.WL_COOKIE || '';
-  constructor(bot: TelegramBot) {
+  constructor(bot: Telecam.Client) {
     super(bot);
     const adminId = process.env.ADMIN_ID?.split(',')[0];
     if (isNumber(adminId)) {
@@ -641,6 +642,12 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     if (!this.asAdmin) {
       messageIdsForDelete = undefined;
     }
+    if (messageIdsForDelete && messageIdsForDelete.length > 1) {
+      messageIdsForDelete = [
+        messageIdsForDelete[0],
+        messageIdsForDelete.at(-1) as string,
+      ];
+    }
     return await this.sendLongMessageV2(
       chat.id,
       fullCaption,
@@ -923,18 +930,27 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
 
     const reply_to_message_id = data?.users?.[chatId]?.message_id;
     if (reply_to_message_id) {
-      await this.sendLongMessageV2(
-        chatId,
-        `<b>${chat.first_name}</b> អ្នកធ្លាប់រកម្តងរួចហើយ សូមចុចខាងលើនេះ👆👆👆 \n\n`.concat(
-          '<b>បើមិនមានសូមចុចខាងក្រោមនេះ:\n',
-          `👉 /w_refresh_data_${data.logcode}</b>`
-        ),
-        { parse_mode: 'HTML', reply_to_message_id }
-      );
-      this.logger.info(
-        `User ${chatId} has previous message for logcode ${data.logcode}`
-      );
-      return;
+      try {
+        await this.sendLongMessageV2(
+          chatId,
+          `<b>${chat.first_name}</b> អ្នកធ្លាប់រកម្តងរួចហើយ សូមចុចខាងលើនេះ👆👆👆 \n\n`.concat(
+            '<b>បើមិនមានសូមចុចខាងក្រោមនេះ:\n',
+            `👉 /w_refresh_data_${data.logcode}</b>`
+          ),
+          { parse_mode: 'HTML', reply_to_message_id }
+        );
+        this.logger.info(
+          `User ${chatId} has previous message for logcode ${data.logcode}`
+        );
+        return;
+      } catch (error: any) {
+        this.logger.error(
+          'previous message id',
+          reply_to_message_id,
+          error.message,
+          '\n Then try to refresh data...'
+        );
+      }
     }
 
     let photos = [] as string[];

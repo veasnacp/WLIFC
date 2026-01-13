@@ -1,4 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
+import Telecam from '@telecam';
 import { MAX_TEXT_LENGTH, WLCheckerBotSendData } from './preload-bot';
 import type { ConfigCache, MapConfig } from './types';
 import {
@@ -149,8 +150,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     { command: 'start', description: 'Start the bot' },
     { command: 'settings', description: 'Show all button actions' },
     { command: 'set_cookie', description: 'Set new cookie' },
+    { command: 'w_translator', description: 'Language Translation' },
   ];
-  constructor(bot: TelegramBot) {
+  activeRoutes = {} as Record<`/${string}`, boolean>;
+  constructor(bot: Telecam.Client) {
     super(bot);
   }
   alertNoPermissionMessage(chatId: TelegramBot.ChatId) {
@@ -646,6 +649,50 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       this.alertNoPermissionMessage(chatId);
     });
   }
+  async translatorInlineButton(msg: TelegramBot.Message) {
+    const opts = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '🇰🇭 Khmer', callback_data: `tr_to_km` },
+            { text: '🇨🇳 Chinese', callback_data: `tr_to_zh-cn` },
+          ],
+          [
+            { text: '🇺🇸 English', callback_data: `tr_to_en` },
+            { text: '🔍 Auto', callback_data: `tr_to_auto` },
+          ],
+          [{ text: 'Stop Translation', callback_data: `tr_to_stop` }],
+        ],
+      },
+      reply_to_message_id: msg.message_id,
+    };
+
+    try {
+      return await this.bot.sendMessage(
+        msg.chat.id,
+        'Select the source language to translate into English:',
+        opts
+      );
+    } catch (error: any) {
+      this.logger.error(error.message, msg);
+    }
+  }
+  async clearMessages(
+    chatId: TelegramBot.ChatId,
+    messageIds: (string | number)[]
+  ) {
+    const messageIdsList = chunkArray(messageIds, 100);
+    for (let i = 0; i < messageIdsList.length; i++) {
+      const messageIds = messageIdsList[i].map((m) => Number(m));
+      try {
+        await this.bot.deleteMessages(chatId, messageIds);
+      } catch (error) {
+        this.logger.error(
+          `Delete message ids: ${messageIds} ` + (error as Error).message
+        );
+      }
+    }
+  }
   async onCallbackQuery() {
     this.bot.on('callback_query', async (query) => {
       const action = query.data;
@@ -657,27 +704,26 @@ export class WLCheckerBot extends WLCheckerBotSendData {
           const { fullname, fullnameWithUsername } = this.currentUser;
           if (action?.startsWith('delete')) {
             try {
-              const messageIdsForDelete = action
-                .replace('delete', '')
-                .split('|');
+              let messageIdsForDelete = action.replace('delete', '').split('|');
+              if (messageIdsForDelete.length > 1) {
+                const start = Number(messageIdsForDelete[0]);
+                const end = Number(messageIdsForDelete.at(-1));
+                messageIdsForDelete = Array.from(
+                  { length: end - start + 1 },
+                  (_, i) => (start + i).toString()
+                );
+              }
               if (messageIdsForDelete.length) {
-                for (let i = 0; i < messageIdsForDelete.length; i++) {
-                  const messageId = Number(messageIdsForDelete[i]);
-                  try {
-                    await this.bot.deleteMessage(chatId, messageId);
-                  } catch (error) {
-                    this.logger.error(
-                      `Delete message id: ${messageId} ` +
-                        (error as Error).message
-                    );
-                  }
-                }
+                await this.clearMessages(chatId, messageIdsForDelete);
               }
               await this.bot.deleteMessage(chatId, msg.message_id);
             } catch (error) {
               this.logger.error('Delete message: ' + (error as Error).message);
             }
-          } else if (action?.startsWith('tr_from_')) {
+          } else if (
+            action?.startsWith('tr_from_') ||
+            action?.startsWith('tr_to_')
+          ) {
             let from = action.replace('tr_from_', '');
             if (from.startsWith('zh|')) {
               const logCode = from.replace('zh|', '').trim();
@@ -701,6 +747,40 @@ export class WLCheckerBot extends WLCheckerBotSendData {
                   chat_id: chatId,
                   message_id: loadingMessage.message_id,
                 });
+              } catch (error) {
+                this.logger.error((error as Error).message);
+                this.bot.answerCallbackQuery(query.id, {
+                  text: '❌ Translation failed!',
+                });
+              }
+            } else {
+              let to = action.replace('tr_to_', '');
+              if (to === 'stop') {
+                delete this.activeRoutes[`/w_translator_${chatId}`];
+                return;
+              }
+              this.logger.info(to, msg.reply_to_message);
+              const text = msg.reply_to_message?.text;
+              try {
+                if (text) {
+                  const loadingMessage = await this.bot.sendMessage(
+                    chatId,
+                    '⏳ កំពុងបកប្រែ សូមមេត្តារងចាំបន្តិចសិន...',
+                    {
+                      reply_to_message_id: msg.message_id,
+                    }
+                  );
+                  const res = await translate(text, { to: 'en' });
+                  await this.bot.editMessageText(
+                    `👉 ${res.text}`[MAX_TEXT_LENGTH],
+                    {
+                      chat_id: chatId,
+                      message_id: loadingMessage.message_id,
+                    }
+                  );
+                } else {
+                  await this.bot.sendMessage(chatId, 'No text found');
+                }
               } catch (error) {
                 this.logger.error((error as Error).message);
                 this.bot.answerCallbackQuery(query.id, {
@@ -927,6 +1007,10 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       const currentDateString = dayjs().format('YYYY-MM-DD hh:mm:ss A');
       let textLog = text.startsWith('/') ? text : `\`${text}\``;
 
+      if (this.activeRoutes[`/w_translator_${chatId}`]) {
+        return this.translatorInlineButton(msg);
+      }
+
       const custom_emoji_ids = [] as string[];
       const emoji_texts = [] as string[];
 
@@ -1032,18 +1116,27 @@ export class WLCheckerBot extends WLCheckerBotSendData {
       if (!isPublicCommands && !isUniqueCommand && text) {
         const logCode = text.startsWith('/') ? text.slice(1) : text;
         await this.onTextCheckLogCodeHandler(msg, logCode);
-      } else if (text.startsWith('/w_refresh_data_')) {
-        const logCode = text.split('w_refresh_data_')[1].trim();
-        let data = this.cacheDataMap.get(logCode);
-        if (data && data.users?.[chatId]) {
-          if ('message_id' in data) delete data.message_id;
-          delete data.users[chatId];
-          this.cacheDataMap.set(logCode, data);
-          this.saveCacheData(data);
+      } else if (text.startsWith('/w_')) {
+        if (text.startsWith('/w_refresh_data_')) {
+          const logCode = text.split('w_refresh_data_')[1].trim();
+          let data = this.cacheDataMap.get(logCode);
+          if (data && data.users?.[chatId]) {
+            if ('message_id' in data) delete data.message_id;
+            delete data.users[chatId];
+            this.cacheDataMap.set(logCode, data);
+            this.saveCacheData(data);
+          }
+          await this.onTextCheckLogCodeHandler(msg, logCode);
+          data = this.cacheDataMap.get(logCode);
+          this.saveCacheData(data, false, true);
         }
-        await this.onTextCheckLogCodeHandler(msg, logCode);
-        data = this.cacheDataMap.get(logCode);
-        this.saveCacheData(data, false, true);
+        if (text.startsWith('/w_translator')) {
+          this.activeRoutes[`/w_translator_${chatId}`] = true;
+          await this.bot.sendMessage(
+            chatId,
+            'Please give the words you need to translate to.'
+          );
+        }
       }
     });
 
@@ -1198,7 +1291,7 @@ export function setupBot() {
   }
 
   // Initialize Telegram Bot
-  const bot = new TelegramBot(
+  const bot = new Telecam(
     TOKEN,
     IS_DEV ? { polling: true } : { webHook: true, polling: false }
   );

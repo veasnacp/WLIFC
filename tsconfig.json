@@ -6,11 +6,17 @@
     "types": ["bun-types"],
     "outDir": "./api",
     "rootDir": "./",
+    "baseUrl": ".",
     "noEmitOnError": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@telecam": ["src/telecam/index.ts"],
+      "@telecam/*": ["src/telecam/*"]
+    }
   },
   "include": [
     "src/**/*",
