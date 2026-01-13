@@ -638,6 +638,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     messageIdShowMore?: string | number,
     messageIdsForDelete?: string[]
   ) {
+    if (!this.asAdmin) {
+      messageIdsForDelete = undefined;
+    }
     return await this.sendLongMessageV2(
       chat.id,
       fullCaption,
@@ -744,31 +747,32 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           }));
         else if (justOne) medias[i][0].caption = undefined;
 
-        await this.bot
-          .sendMediaGroup(chatId, inputMedia)
-          .then(async (sentMessages) => {
-            messageIdShowMore = sentMessages[0].message_id;
-            messageIdsForDelete = sentMessages.map((m) => `${m.message_id}`);
-            this.logger.success(
-              justOne
-                ? `✅ Successfully sent an photo.`
-                : `✅ Successfully sent an album with ${sentMessages.length} items.`
-            );
-          })
-          .catch(async (error) => {
-            isError = true;
-            this.logger.error(
-              justOne
-                ? 'Sending photo: '
-                : 'Sending media group: ' + (error as Error).message
-            );
-            const { message_id } = await this.bot.sendMessage(
-              chatId,
-              '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
-            );
-            errorMessageId = message_id;
-            messageIdShowMore = msg.message_id;
-          });
+        try {
+          await this.bot
+            .sendMediaGroup(chatId, inputMedia)
+            .then(async (sentMessages) => {
+              messageIdShowMore = sentMessages[0].message_id;
+              messageIdsForDelete = sentMessages.map((m) => `${m.message_id}`);
+              this.logger.success(
+                justOne
+                  ? `✅ Successfully sent an photo.`
+                  : `✅ Successfully sent an album with ${sentMessages.length} items.`
+              );
+            });
+        } catch (error) {
+          isError = true;
+          this.logger.error(
+            justOne
+              ? 'Sending photo: '
+              : 'Sending media group: ' + (error as Error).message
+          );
+          const { message_id } = await this.bot.sendMessage(
+            chatId,
+            '❌ សូមទោស! ការផ្ញើរូបភាពមានបញ្ហា សូមព្យាយាមម្តងទៀត។'
+          );
+          errorMessageId = message_id;
+          messageIdShowMore = msg.message_id;
+        }
       }
     };
     await sendMediaGroup();
@@ -921,11 +925,14 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     if (reply_to_message_id) {
       await this.sendLongMessageV2(
         chatId,
-        `<b>${this.currentUser.fullname}</b> អ្នកធ្លាប់រកម្តងរួចហើយ សូមចុចខាងលើនេះ👆👆👆 \n\n`.concat(
+        `<b>${chat.first_name}</b> អ្នកធ្លាប់រកម្តងរួចហើយ សូមចុចខាងលើនេះ👆👆👆 \n\n`.concat(
           '<b>បើមិនមានសូមចុចខាងក្រោមនេះ:\n',
           `👉 /w_refresh_data_${data.logcode}</b>`
         ),
         { parse_mode: 'HTML', reply_to_message_id }
+      );
+      this.logger.info(
+        `User ${chatId} has previous message for logcode ${data.logcode}`
       );
       return;
     }
