@@ -95,61 +95,14 @@ export function isMemberAsEmployee(
   );
 }
 
-// export function splitTextWithEntities(
-//   fullText: string,
-//   entities: TelegramBot.MessageEntity[] = [],
-//   limit = 4000
-// ) {
-//   const chunks = [];
-//   let start = 0;
-
-//   while (start < fullText.length) {
-//     let end = start + limit;
-
-//     // Attempt to split at a space or newline for readability
-//     if (end < fullText.length) {
-//       const lastSpace = fullText.lastIndexOf(' ', end);
-//       if (lastSpace > start) end = lastSpace;
-//     }
-
-//     const chunkText = fullText.substring(start, end);
-//     const chunkEntities = [];
-
-//     // Filter and adjust entities for this chunk
-//     for (const entity of entities) {
-//       const entityEnd = entity.offset + entity.length;
-
-//       // Does the entity overlap with this chunk?
-//       if (entity.offset < end && entityEnd > start) {
-//         // Calculate the relative offset within this specific chunk
-//         const adjustedOffset = Math.max(0, entity.offset - start);
-
-//         // Calculate how much of the entity fits in this chunk
-//         const partEnd = Math.min(entityEnd, end);
-//         const adjustedLength = partEnd - Math.max(entity.offset, start);
-
-//         chunkEntities.push({
-//           ...entity,
-//           offset: adjustedOffset,
-//           length: adjustedLength,
-//         });
-//       }
-//     }
-
-//     chunks.push({ text: chunkText, entities: chunkEntities });
-//     start = end;
-//   }
-//   return chunks;
-// }
-
 export const LOADING_TEXT =
   'សូមមេត្តារងចាំបន្តិច... កំពុងស្វែងរកទិន្នន័យ\n🔄 Processing your request... Please hold tight!';
 export const MAX_CAPTION_LENGTH = 1024;
 export const MAX_TEXT_LENGTH = 4096;
-const fs = process.getBuiltinModule('fs');
+export const fsNode = process.getBuiltinModule('fs');
 
 export class WLCheckerBotPreLoad {
-  fs = fs;
+  fs = fsNode;
   logger = logger;
   currentDate = {} as ReturnType<WLCheckerBotPreLoad['getCurrentData']>;
   cachePath = '';
@@ -217,9 +170,9 @@ export class WLCheckerBotPreLoad {
     };
   }
   loadCacheData() {
-    if (IS_DEV && fs) {
-      if (fs.existsSync(this.fileData)) {
-        const dataString = fs.readFileSync(this.fileData, {
+    if (IS_DEV && this.fs) {
+      if (this.fs.existsSync(this.fileData)) {
+        const dataString = this.fs.readFileSync(this.fileData, {
           encoding: 'utf-8',
         });
         if (dataString.startsWith('[') && dataString.endsWith(']')) {
@@ -228,8 +181,8 @@ export class WLCheckerBotPreLoad {
           } catch {}
         }
       }
-      if (fs.existsSync(this.usersFile)) {
-        const dataString = fs.readFileSync(this.usersFile, {
+      if (this.fs.existsSync(this.usersFile)) {
+        const dataString = this.fs.readFileSync(this.usersFile, {
           encoding: 'utf-8',
         });
         if (dataString.startsWith('[') && dataString.endsWith(']')) {
@@ -262,14 +215,14 @@ export class WLCheckerBotPreLoad {
     this.activeUserMap = new Map(this.usersData);
   }
   async saveUser(msg: TelegramBot.Message) {
-    if (!fs) return;
+    if (!this.fs) return;
 
     const chatId = msg.chat.id;
     if (IS_DEV && this.asAdmin)
       try {
         const activeUserData = [...this.activeUserMap.entries()];
         if (activeUserData.length) {
-          fs.writeFileSync(this.usersFile, JSON.stringify(activeUserData));
+          this.fs.writeFileSync(this.usersFile, JSON.stringify(activeUserData));
         }
         let message = 'no active user';
         if (activeUserData.length) {
@@ -470,7 +423,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     ) {
       this.cacheDataMap.set(_logCode, data);
       if (IS_DEV) {
-        if (fs) {
+        if (this.fs) {
           let cacheData = Array.from(this.cacheDataMap.entries());
           const dataLength = cacheData.length;
           if (dataLength > 50) {
@@ -478,7 +431,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           }
           if (dataLength > 0)
             try {
-              fs.writeFileSync(
+              this.fs.writeFileSync(
                 this.fileData,
                 JSON.stringify(cacheData, null, 2),
                 {

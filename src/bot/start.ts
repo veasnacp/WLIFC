@@ -387,7 +387,7 @@ export class WLCheckerBot extends WLCheckerBotSendData {
     const chatId = msg.chat.id;
     this.cacheDataMap.clear();
     if (IS_DEV && this.asAdmin) {
-      const fs = process.getBuiltinModule('fs');
+      const fs = this.fs;
       if (fs && fs.existsSync(this.fileData)) {
         fs.unlinkSync(this.fileData);
       }

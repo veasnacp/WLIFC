@@ -1,8 +1,7 @@
 import { MessageEntity } from './types';
-
-const { createHash, randomBytes } = process.getBuiltinModule('crypto');
-const fs = process.getBuiltinModule('fs');
-const path = process.getBuiltinModule('path');
+import { createHash, randomBytes } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const log = {
   getLogger: (name: string) => ({
