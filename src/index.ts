@@ -410,7 +410,7 @@ const app = new Elysia({
 
 // Start server in development
 if (IS_DEV) {
-  const server = app.listen(PORT, () => {
+  const server = app.listen({ hostname: '0.0.0.0', port: PORT }, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
