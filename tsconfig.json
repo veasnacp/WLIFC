@@ -16,7 +16,10 @@
     "paths": {
       "@telecam": ["src/telecam/index.ts"],
       "@telecam/*": ["src/telecam/*"]
-    }
+    },
+    "jsx": "react",
+    "jsxFactory": "Html.createElement",
+    "jsxFragmentFactory": "Html.Fragment"
   },
   "include": [
     "src/**/*",
