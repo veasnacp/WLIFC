@@ -291,6 +291,12 @@ export class WLLogistic {
             }
           });
         }
+        if (String(data.goods_number) === '0') {
+          data.goods_number = data_0.goods_number;
+          data.weight = data_0.weight;
+          data.volume = data_0.volume;
+          data.total = data_0.total;
+        }
         return { ...data, medias, goods_numbers: dataUpdate.goods_number };
       } else {
         return { message: 'not found' } as const;
