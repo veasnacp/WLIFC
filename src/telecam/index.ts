@@ -5,7 +5,7 @@ import {
   BusinessConnection as BC,
 } from './types';
 
-declare namespace Telecam {
+export declare namespace Telecam {
   interface Client extends TelegramBotClient {}
   interface Bot extends TelegramBotClient {}
   interface BusinessConnection extends BC {}
@@ -16,6 +16,4 @@ class BaseTelecam extends TelegramBot {
   }
 }
 
-const Telecam = BaseTelecam as TelecamConstructor;
-
-export default Telecam;
+export const Telecam = BaseTelecam as TelecamConstructor;

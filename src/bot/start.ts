@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import Telecam from '@telecam';
+import { Telecam } from '@telecam';
 import { MAX_TEXT_LENGTH, WLCheckerBotSendData } from './preload-bot';
 import type { ConfigCache, MapConfig } from './types';
 import {
