@@ -1,6 +1,7 @@
 import { Elysia, file, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
 import { html } from '@elysiajs/html';
+
 import { DataExpand, WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
 import TelegramBot from 'node-telegram-bot-api';
@@ -12,16 +13,31 @@ import {
   TOKEN,
   WL_PUBLIC_URL,
 } from './config/constants';
-import { setupBot, WLCheckerBot } from './bot/start';
+// import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
+import { markdown } from './bot/extensions/markdown';
+import { html as pHtml } from './bot/extensions/html';
+import { logger } from './utils/logger';
+import dayjs from 'dayjs';
+import Telecam from '@telecam';
 const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
 
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
-const bot = setupBot();
-const wlb = new WLCheckerBot(bot);
+// const bot = setupBot();
+// const wlb = new WLCheckerBot(bot);
+// Testing
+const bot = new Telecam(
+  'TOKEN',
+  IS_DEV ? { polling: true } : { webHook: true, polling: false }
+);
+const wlb = {} as any;
+markdown.parse('');
+pHtml.parse('');
+const today = dayjs().format('YYYY-MM-DD');
+logger.info('.....testing', today);
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -272,7 +288,7 @@ const app = new Elysia({
 
     const _data = wlb.cacheDataMap.get(_logCode) as typeof data;
     if (!_data && !isTrackingNumber) {
-      data = wlb.cacheDataMap.values().find((d) => {
+      data = wlb.cacheDataMap.values().find((d: any) => {
         if (d.logcode === logCode) {
           _logCode = d.logcode;
         }
@@ -407,12 +423,13 @@ const app = new Elysia({
   })
   .compile();
 
+// { hostname: !IS_DEV ? '0.0.0.0' : undefined, port: Number(PORT) },
 const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
   console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
 });
 
-wlb.start();
+// wlb.start();
 
 export default app;
