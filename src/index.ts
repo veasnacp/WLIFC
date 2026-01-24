@@ -19,7 +19,7 @@ import { markdown } from './bot/extensions/markdown';
 import { html as pHtml } from './bot/extensions/html';
 import { logger } from './utils/logger';
 import dayjs from 'dayjs';
-import Telecam from '@telecam';
+// import Telecam from '@telecam';
 const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
@@ -29,10 +29,7 @@ const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 // const bot = setupBot();
 // const wlb = new WLCheckerBot(bot);
 // Testing
-const bot = new Telecam(
-  'TOKEN',
-  IS_DEV ? { polling: true } : { webHook: true, polling: false }
-);
+const bot = {} as any;
 const wlb = {} as any;
 markdown.parse('');
 pHtml.parse('');
