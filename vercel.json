@@ -4,7 +4,11 @@
   "crons": [
     {
       "path": "/api/webhook-info",
-      "schedule": "*/5 * * * 0"
+      "schedule": "*/5 9-16 * * 0"
+    },
+    {
+      "path": "/api/webhook-info",
+      "schedule": "0,5,10,15,20,25,30,35,40,45,50,55 17 * * 0"
     }
   ],
   "rewrites": [
