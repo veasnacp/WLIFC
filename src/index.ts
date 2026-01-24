@@ -92,8 +92,12 @@ const app = new Elysia({
   .get('/api/webhook-info', async ({ set }) => {
     // headers['x-cron-secret'] !== process.env.CRON_SECRET
     if (!IS_DEV && !webhookEnabled) {
-      set.status = 204;
-      return;
+      const now = new Date();
+      const hour = now.getHours();
+      if (hour < 9 || hour > 17) {
+        set.status = 204;
+        return;
+      }
     }
     try {
       const info = await bot.getWebHookInfo();
