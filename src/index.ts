@@ -420,4 +420,4 @@ const server = app.listen(PORT, () => {
 
 // wlb.start();
 
-export default app.handle satisfies (req: Request) => Promise<Response>;
+export default app;
