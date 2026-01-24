@@ -13,7 +13,7 @@ import {
   TOKEN,
   WL_PUBLIC_URL,
 } from './config/constants';
-import { setupBot, WLCheckerBot } from './bot/start';
+// import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
 const crypto = process.getBuiltinModule('crypto');
 
@@ -21,8 +21,11 @@ const publicPath = path.join(process.cwd(), 'public');
 
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
-const bot = setupBot();
-const wlb = new WLCheckerBot(bot);
+// const bot = setupBot();
+// const wlb = new WLCheckerBot(bot);
+// Testing
+const bot = {} as any;
+const wlb = {} as any;
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -408,15 +411,13 @@ const app = new Elysia({
   })
   .compile();
 
-const server = app.listen(
-  { hostname: !IS_DEV ? '0.0.0.0' : undefined, port: Number(PORT) },
-  () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
-    console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
-  }
-);
+// { hostname: !IS_DEV ? '0.0.0.0' : undefined, port: Number(PORT) },
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
+  console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
+});
 
-wlb.start();
+// wlb.start();
 
 export default app.handle satisfies (req: Request) => Promise<Response>;
