@@ -22,6 +22,7 @@ const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
 const bot = setupBot();
 const wlb = new WLCheckerBot(bot);
+let webhookEnabled = false;
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
@@ -88,7 +89,12 @@ const app = new Elysia({
     environment: NODE_ENV,
   }))
   // Webhook info endpoint
-  .get('/api/webhook-info', async () => {
+  .get('/api/webhook-info', async ({ set }) => {
+    // headers['x-cron-secret'] !== process.env.CRON_SECRET
+    if (!IS_DEV && !webhookEnabled) {
+      set.status = 204; // No Content
+      return;
+    }
     try {
       const info = await bot.getWebHookInfo();
       return {
@@ -118,9 +124,11 @@ const app = new Elysia({
       if (query.polling === 'false') {
         await bot.startPolling();
       }
+      webhookEnabled = true;
       return {
         success: true,
         message: `Webhook set to ${WEBHOOK_URL}`,
+        updateAt: new Date().toISOString(),
       };
     } catch (error: any) {
       return {
@@ -136,6 +144,7 @@ const app = new Elysia({
       if (query.polling === 'true') {
         await bot.startPolling();
       }
+      webhookEnabled = false;
       return {
         success: true,
         message: 'Webhook deleted',
