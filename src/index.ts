@@ -18,6 +18,8 @@ import path from 'path';
 import { markdown } from './bot/extensions/markdown';
 import { html as pHtml } from './bot/extensions/html';
 import { logger } from './utils/logger';
+import dayjs from 'dayjs';
+import Telecam from '@telecam';
 const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
@@ -27,11 +29,15 @@ const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 // const bot = setupBot();
 // const wlb = new WLCheckerBot(bot);
 // Testing
-const bot = {} as any;
+const bot = new Telecam(
+  'TOKEN',
+  IS_DEV ? { polling: true } : { webHook: true, polling: false }
+);
 const wlb = {} as any;
-markdown;
-pHtml;
-logger.info('.....testing');
+markdown.parse('');
+pHtml.parse('');
+const today = dayjs().format('YYYY-MM-DD');
+logger.info('.....testing', today);
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
