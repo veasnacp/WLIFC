@@ -1,6 +1,6 @@
 import { MessageEntity } from './types';
 import path from 'path';
-const { createHash, randomBytes } = process.getBuiltinModule('crypto');
+const crypto = process.getBuiltinModule('crypto');
 
 export const log = {
   getLogger: (name: string) => ({
@@ -13,7 +13,7 @@ export const log = {
 };
 
 export function generateRandomLong(signed = true): BigInt {
-  const buf = Buffer.from(randomBytes(8));
+  const buf = Buffer.from(crypto.randomBytes(8));
   if (signed) {
     return buf.readBigInt64LE();
   } else {
@@ -126,13 +126,16 @@ export function generateKeyDataFromNonce(
   const newNonceBytes = Buffer.alloc(32);
   newNonceBytes.writeBigInt64LE(newNonce);
 
-  const hash1 = createHash('sha1')
+  const hash1 = crypto
+    .createHash('sha1')
     .update(Buffer.concat([newNonceBytes, serverNonceBytes]))
     .digest();
-  const hash2 = createHash('sha1')
+  const hash2 = crypto
+    .createHash('sha1')
     .update(Buffer.concat([serverNonceBytes, newNonceBytes]))
     .digest();
-  const hash3 = createHash('sha1')
+  const hash3 = crypto
+    .createHash('sha1')
     .update(Buffer.concat([newNonceBytes, newNonceBytes]))
     .digest();
 

@@ -13,16 +13,23 @@ import {
   TOKEN,
   WL_PUBLIC_URL,
 } from './config/constants';
-import { setupBot, WLCheckerBot } from './bot/start';
+// import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
+import { markdown } from './bot/extensions/markdown';
+import { html as pHtml } from './bot/extensions/html';
 const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
 
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
-const bot = setupBot();
-const wlb = new WLCheckerBot(bot);
+// const bot = setupBot();
+// const wlb = new WLCheckerBot(bot);
+// Testing
+const bot = {} as any;
+const wlb = {} as any;
+markdown;
+pHtml;
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
