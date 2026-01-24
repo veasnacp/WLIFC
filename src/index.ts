@@ -17,6 +17,7 @@ import {
 import path from 'path';
 import { markdown } from './bot/extensions/markdown';
 import { html as pHtml } from './bot/extensions/html';
+import { logger } from './utils/logger';
 const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
@@ -30,6 +31,7 @@ const bot = {} as any;
 const wlb = {} as any;
 markdown;
 pHtml;
+logger.info('.....testing');
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
