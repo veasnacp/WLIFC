@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { Telecam } from '@telecam';
+import { Telecam } from '../telecam';
 import path from 'path';
 import { DataExpand, WLLogistic } from '../wl/edit';
 import { Data } from '../wl/types';
