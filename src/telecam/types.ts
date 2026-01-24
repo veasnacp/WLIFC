@@ -1,4 +1,4 @@
-import TelegramBot from 'node-telegram-bot-api';
+import type TelegramBot from 'node-telegram-bot-api';
 
 export interface BusinessConnection {
   id: string;
