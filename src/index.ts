@@ -13,7 +13,7 @@ import {
   TOKEN,
   WL_PUBLIC_URL,
 } from './config/constants';
-// import { setupBot, WLCheckerBot } from './bot/start';
+import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
 const crypto = process.getBuiltinModule('crypto');
 
@@ -21,11 +21,8 @@ const publicPath = path.join(process.cwd(), 'public');
 
 const WEBHOOK_URL = `${PUBLIC_URL}/webhook`;
 
-// const bot = setupBot();
-// const wlb = new WLCheckerBot(bot);
-// Testing
-const bot = {} as any;
-const wlb = {} as any;
+const bot = setupBot();
+const wlb = new WLCheckerBot(bot);
 
 function validateTelegramData(initData: string, botToken: string) {
   const urlParams = new URLSearchParams(initData);
