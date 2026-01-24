@@ -90,7 +90,6 @@ const app = new Elysia({
   }))
   // Webhook info endpoint
   .get('/api/webhook-info', async ({ set }) => {
-    // headers['x-cron-secret'] !== process.env.CRON_SECRET
     if (!IS_DEV && !webhookEnabled) {
       set.status = 204;
       return;
