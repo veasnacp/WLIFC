@@ -1,7 +1,6 @@
 import { Elysia, file, t } from 'elysia';
 import { staticPlugin } from '@elysiajs/static';
 import { html } from '@elysiajs/html';
-import crypto from 'crypto';
 
 import { DataExpand, WLLogistic } from './wl/edit';
 import { isNumber } from './utils/is';
@@ -16,6 +15,7 @@ import {
 } from './config/constants';
 import { setupBot, WLCheckerBot } from './bot/start';
 import path from 'path';
+const crypto = process.getBuiltinModule('crypto');
 
 const publicPath = path.join(process.cwd(), 'public');
 
@@ -273,7 +273,7 @@ const app = new Elysia({
 
     const _data = wlb.cacheDataMap.get(_logCode) as typeof data;
     if (!_data && !isTrackingNumber) {
-      data = wlb.cacheDataMap.values().find((d) => {
+      data = wlb.cacheDataMap.values().find((d: any) => {
         if (d.logcode === logCode) {
           _logCode = d.logcode;
         }
@@ -408,18 +408,15 @@ const app = new Elysia({
   })
   .compile();
 
-// Start server in development
-// if (IS_DEV) {
 const server = app.listen(
-  { hostname: IS_DEV ? '0.0.0.0' : undefined, port: Number(PORT) },
+  { hostname: !IS_DEV ? '0.0.0.0' : undefined, port: Number(PORT) },
   () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
     console.log(`📝 Set webhook: http://localhost:${PORT}/api/set-webhook`);
   }
 );
-// }
 
 wlb.start();
 
-// export default app;
+export default app.handle satisfies (req: Request) => Promise<Response>;

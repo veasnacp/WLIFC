@@ -1,7 +1,6 @@
 import { MessageEntity } from './types';
-import { createHash, randomBytes } from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
+import path from 'path';
+const { createHash, randomBytes } = process.getBuiltinModule('crypto');
 
 export const log = {
   getLogger: (name: string) => ({
@@ -23,8 +22,9 @@ export function generateRandomLong(signed = true): BigInt {
 }
 
 export function ensureParentDirExists(filePath: string): void {
+  const fs = process.getBuiltinModule('fs');
   const parent = path.dirname(filePath);
-  if (parent) {
+  if (fs && parent) {
     fs.mkdirSync(parent, { recursive: true });
   }
 }
