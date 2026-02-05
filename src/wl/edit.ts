@@ -23,6 +23,7 @@ export type DataExpand = Data & {
       message_id?: number;
     }
   >;
+  excel_format_data?: string;
 };
 
 export class WLLogistic {

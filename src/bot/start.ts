@@ -31,6 +31,7 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
+import clipboard from 'clipboardy';
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
@@ -800,10 +801,20 @@ export class WLCheckerBot extends WLCheckerBotSendData {
               );
             }
             if (!data) return;
-            if (!this.asAdmin)
+            if (this.asAdmin) {
+              try {
+                if (data.excel_format_data)
+                  clipboard.write(data.excel_format_data);
+              } catch (error) {
+                this.logger.error(
+                  'Clipboard error: ' + (error as Error).message
+                );
+              }
+            } else {
               this.loggingCache.add(
                 `👉 ${fullname} clicked show more button from log code /${logCode}`
               );
+            }
             await this.showMoreDataCaption(
               chatId,
               data,

@@ -365,7 +365,10 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     const isTrackingNumber = ![5, 6, 7, 8, 9].some((v) =>
       logCode.startsWith(`2${v}`)
     );
-    const isNewLogCode = !isTrackingNumber && logCode.length === 12;
+    let isNewLogCode = !isTrackingNumber && logCode.length === 12;
+    if (logCode.startsWith('26') && logCode.length === 13) {
+      isNewLogCode = !isTrackingNumber;
+    }
     const isOldLogCode = logCode.startsWith('1757');
     const isSubLogCode =
       isTrackingNumber && logCode.length >= 12 && logCode.length <= 16;
@@ -479,6 +482,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
       const isSplitting = goods_numbers && goods_numbers.length > 1;
       let warehousingRemarks = data.warehousingremarks || '';
       let [container_code, ...container_date] = data.container_num?.split('-');
+      if (container_date?.[0]?.startsWith('0')) {
+        container_date[0] = container_date[0].substring(1);
+      }
 
       if (warehousingRemarks) {
         if (!this.asAdmin) {
@@ -495,6 +501,12 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         }
       }
       const pm = this.parseModeTo(null, false);
+      const goods_name = this.asAdmin
+        ? data.goods_name
+            .split(',')
+            .map((v) => v.split('(')[0].trim())
+            .join(',')
+        : data.goods_name;
       fullCaption = ''.concat(
         `- លេខបុង: ${pm.c(
           isTrackingNumber ? data.logcode : logCodeFromCommand
@@ -540,9 +552,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
               )
             : '\n- ម៉ែត្រគូបផ្សេងគ្នា: N/A\n'
         }`,
-        `- ទំនិញ: ${data.goods_name}${
-          data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''
-        }\n`,
+        `- ទំនិញ: ${pm.c(goods_name)}${data.isSmallPackage ? ' - 小件包裹(អីវ៉ាន់តូច)' : ''}\n`,
         this.asAdmin || this.asAdminMember || this.asMemberContainerController
           ? ''.concat(
               '- ទូរកុងតឺន័រ: ',
@@ -554,25 +564,41 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
           : '',
         `- ផ្សេងៗ: ${data.desc?.replace(/到達|到达/g, '$&(មកដល់)') || 'N/A'}\n`
       );
+      if (this.asAdmin) {
+        const dataExel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
+        data.excel_format_data = dataExel;
+        fullCaption += `\n\n🧾 Excel Format Data:\n${pm.c(dataExel)}\n`;
+      }
       maxFullCaption = fullCaption.substring(0, MAX_TEXT_LENGTH);
       caption = fullCaption.substring(0, MAX_CAPTION_LENGTH);
     }
     return { caption, fullCaption, maxFullCaption };
   }
   async sendFullCationNoImageFound(
-    chatId: number,
-    fullCaption: string,
+    chat: TelegramBot.Chat,
     data: DataExpand | undefined,
+    fullCaption: string,
+    logCodeFromCommand: string,
+    messageIdShowMore?: string | number,
+    messageIdsForDelete?: string[],
     afterSendCaption?: VoidFunction
   ) {
     const message = await this.sendLongMessageV2(
-      chatId,
+      chat.id,
       `🤷 🏞🏞 អត់មានរូបភាពទេ 🏞🏞 🤷\n\n${fullCaption}`,
-      sendMessageOptions()
+      sendMessageOptions(
+        {
+          translateText: logCodeFromCommand,
+          logCodeOrAndForShowMore: `${logCodeFromCommand}|${messageIdShowMore}`,
+          chat,
+          messageIdsForDelete,
+        },
+        this.asAdmin
+      )
     );
     if (data?.smallPackageGoodsNames?.length && data.subLogCodes) {
       await this.bot.sendMessage(
-        chatId,
+        chat.id,
         '=== អីវ៉ាន់តូចៗទាំងអស់ ===\n'.concat(
           data.smallPackageGoodsNames.join('\n')
         ),
@@ -930,9 +956,12 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         }
       };
       return await this.sendFullCationNoImageFound(
-        chatId,
-        fullCaption,
+        chat,
         data,
+        fullCaption,
+        logCode,
+        messageIdShowMore,
+        undefined,
         deleteLoadingMsg
       ).then((dt) => {
         if (data) data.message_id = dt.message_id;
