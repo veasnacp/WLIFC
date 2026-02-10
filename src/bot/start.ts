@@ -31,7 +31,10 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 import dayjs from 'dayjs';
-import clipboard from 'clipboardy';
+// import clipboard from 'clipboardy';
+const clipboard = {
+  write: (val: any) => {},
+};
 
 export const configUserWithAdminPermission = async (
   bot: TelegramBot,
