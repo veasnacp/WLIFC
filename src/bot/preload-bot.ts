@@ -454,6 +454,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let fullCaption: string | undefined;
     let maxFullCaption: string | undefined;
     let caption: string | undefined;
+    let dataExcel = '';
 
     if (data) {
       const goods_numbers =
@@ -565,14 +566,14 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         `- ផ្សេងៗ: ${data.desc?.replace(/到達|到达/g, '$&(មកដល់)') || 'N/A'}\n`
       );
       if (this.asAdmin) {
-        const dataExel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
-        data.excel_format_data = dataExel;
-        fullCaption += `\n\n🧾 Excel Format Data:\n${pm.c(dataExel)}\n`;
+        dataExcel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
+        data.excel_format_data = dataExcel;
+        fullCaption += `\n\n🧾 Excel Format Data:\n${pm.c(dataExcel)}\n`;
       }
       maxFullCaption = fullCaption.substring(0, MAX_TEXT_LENGTH);
       caption = fullCaption.substring(0, MAX_CAPTION_LENGTH);
     }
-    return { caption, fullCaption, maxFullCaption };
+    return { caption, fullCaption, maxFullCaption, dataExcel };
   }
   async sendFullCationNoImageFound(
     chat: TelegramBot.Chat,

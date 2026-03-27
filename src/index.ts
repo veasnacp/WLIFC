@@ -239,6 +239,10 @@ const app = new Elysia({
   })
   .get('/favicon.ico', () => file(path.join(publicPath, 'favicon.ico')))
   .get('/bot.js', () => file(path.join(publicPath, 'bot.js')))
+  .get('/search', ({ html }) => {
+    // read from search.html and return as web page
+    return file(path.join(publicPath, 'search.html'));
+  })
   .get('/wl/set-cookie', async ({ query, set }) => {
     set.status = 200;
     let cookie = query.cookie || '';
@@ -327,10 +331,23 @@ const app = new Elysia({
       return { message: data.message, errorCode: 1 };
     }
 
+    let dataExcel = '';
+    try {
+      const dataCaptions = wlb.generateCaptions(
+        logCode,
+        data,
+        isTrackingNumber
+      );
+      dataExcel = dataCaptions.dataExcel;
+    } catch (error: any) {
+      console.error('Error generating captions:', error.message);
+    }
+
     return {
       message: data && !('message' in data) ? 'successful' : 'failed',
       logCode,
       data,
+      dataExcel,
     };
   })
   .get('/wl/display-image', ({ query, html }) => {

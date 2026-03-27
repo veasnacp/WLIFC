@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logistics Shipment Form - WL Logistics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;700&family=Poppins:wght@500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --brand-red: #f87171;
+            --brand-blue: #60a5fa;
+            --brand-green: #4ade80;
+            --blue-pen: #2563eb;
+        }
+
+        body {
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: 'Kantumruy Pro', sans-serif;
+        }
+
+        .page-container {
+            width: 210mm;
+            height: 297mm;
+            padding: 8mm;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .form-section {
+            width: 100%;
+            background: white;
+            border: 2px solid #000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-grow: 1;
+            max-height: 92mm;
+        }
+
+        .cut-line {
+            border-top: 1.5px dashed #666;
+            width: 100%;
+            margin: 1px 0;
+        }
+
+        .header-bar {
+            padding: 8px 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1.4rem;
+            color: white !important;
+            -webkit-print-color-adjust: exact;
+        }
+
+        .bg-soft-blue { background-color: var(--brand-blue) !important; }
+        .bg-soft-red { background-color: var(--brand-red) !important; }
+        .bg-soft-green { background-color: var(--brand-green) !important; }
+
+        .stroke-soft-blue { stroke: var(--brand-blue) !important; }
+        .stroke-soft-red { stroke: var(--brand-red) !important; }
+        .stroke-soft-green { stroke: var(--brand-green) !important; }
+
+        .logo-section { display: flex; align-items: center; }
+        .logo-container {
+            background: white;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            padding: 4px;
+        }
+
+        .container-box {
+            background: white;
+            color: black;
+            padding: 2px 12px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 1.1rem;
+            height: 34px;
+        }
+
+        .container-value {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            color: var(--blue-pen);
+        }
+
+        .grid-cell {
+            border-bottom: 1.5px solid #000;
+            border-right: 1.5px solid #000;
+            padding: 10px 12px;
+            height: 68px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .no-right-border { border-right: none !important; }
+
+        .label-group {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 42%;
+            gap: 4px;
+        }
+
+        .label-km { font-size: 0.95rem; color: #000; font-weight: 700; line-height: 1.1; }
+        .label-zh { font-size: 0.85rem; color: #444; line-height: 1.1; }
+
+        .value-text {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--blue-pen);
+            text-align: center;
+            flex-grow: 1;
+            padding-left: 5px;
+        }
+
+        .sideways-lines {
+            width: 35px;
+            background: linear-gradient(to bottom, transparent 95%, #eee 100%);
+            background-size: 100% 35px;
+            border-right: 1.5px solid #000;
+        }
+
+        .signature-area {
+            display: flex;
+            border-top: 2px solid #000;
+            flex-grow: 1;
+        }
+
+        .signature-box {
+            border-right: 1.5px solid #000;
+            flex: 1;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            min-height: 120px;
+        }
+
+        .signature-box:last-child { border-right: none; }
+
+        .signature-line {
+            border-bottom: 2px dashed #444;
+            margin-top: auto;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+
+        /* Loading state styles */
+        #loader {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        @media print {
+            body { background: white; padding: 0; margin: 0; }
+            .page-container { box-shadow: none; padding: 5mm; width: 210mm; height: 297mm; }
+            .header-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            #loader { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loader">កំពុងទាញយកទិន្នន័យ... (Fetching Data...)</div>
+    <div id="main-content" class="page-container" style="display: none;">
+        <!-- Forms will be injected here -->
+    </div>
+
+    <script>
+        /**
+         * Simulates an async fetch request
+         */
+        async function fetchLogisticsData() {
+            // In real use: const response = await fetch('YOUR_API_ENDPOINT');
+            // return await response.json();
+
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve({
+                        "dataExcel": "3.21A\t黄智略-柯志鹏\t260320092946\t2026-03-20\t灯具\t9\t130.5\t1.007\t1.007",
+                        "total": 123.8
+                    });
+                }, 800); // Simulate network delay
+            });
+        }
+
+        /**
+         * Generates the HTML for the form sections based on data
+         */
+        function generateFormHtml(fields) {
+            const themes = [
+                { bg: 'bg-soft-blue', stroke: 'stroke-soft-blue' },
+                { bg: 'bg-soft-red', stroke: 'stroke-soft-red' },
+                { bg: 'bg-soft-green', stroke: 'stroke-soft-green' }
+            ];
+
+            let htmlOutput = '';
+
+            themes.forEach((theme, index) => {
+                htmlOutput += `
+                <div class="form-section">
+                    <div class="header-bar ${theme.bg}">
+                        <div class="logo-section">
+                            <div class="logo-container">
+                                <svg class="w-full h-full" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="50" cy="50" r="45" fill="none" class="${theme.stroke}" stroke-width="10"/>
+                                    <path d="M25 35 L40 75 L50 50 L60 75 L75 35" fill="none" class="${theme.stroke}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <span>WL 翊诚国际物流</span>
+                        </div>
+                        <div class="container-box">
+                            <span class="font-bold">ទូរ:</span>
+                            <span class="container-value">${fields.container}</span>
+                        </div>
+                    </div>
+                    <div class="flex">
+                        <div class="sideways-lines"></div>
+                        <div class="flex-1 grid grid-cols-12">
+                            <div class="grid-cell col-span-8">
+                                <div class="label-group">
+                                    <span class="label-km">លេខបុង</span>
+                                    <span class="label-zh">体积描述</span>
+                                </div>
+                                <div class="value-text">${fields.billNumber}</div>
+                            </div>
+                            <div class="grid-cell col-span-4 no-right-border">
+                                <div class="label-group">
+                                    <span class="label-km">ចំនួនកញ្ចប់</span>
+                                    <span class="label-zh">件数</span>
+                                </div>
+                                <div class="value-text">${fields.quantity}</div>
+                            </div>
+                            <div class="grid-cell col-span-8">
+                                <div class="label-group">
+                                    <span class="label-km">ឈ្មោះទំនិញ</span>
+                                    <span class="label-zh">货物品名</span>
+                                </div>
+                                <div class="value-text">${fields.itemName}</div>
+                            </div>
+                            <div class="grid-cell col-span-4 no-right-border">
+                                <div class="label-group">
+                                    <span class="label-km">ម៉ែត្រគូប</span>
+                                    <span class="label-zh">体积 (m³)</span>
+                                </div>
+                                <div class="value-text">${fields.volume}</div>
+                            </div>
+                            <div class="grid-cell col-span-8" style="border-bottom: none;">
+                                <div class="label-group">
+                                    <span class="label-km">ទឹកប្រាក់សរុប</span>
+                                    <span class="label-zh">费用合计</span>
+                                </div>
+                                <div class="value-text">$ ${fields.totalPrice}</div>
+                            </div>
+                            <div class="grid-cell col-span-4 no-right-border" style="border-bottom: none;">
+                                <div class="label-group">
+                                    <span class="label-km">ទម្ងន់</span>
+                                    <span class="label-zh">重量 (kg)</span>
+                                </div>
+                                <div class="value-text">${fields.weight}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="signature-area">
+                        <div class="signature-box">
+                            <div class="label-group w-full">
+                                <span class="label-km">អ្នកចេញទំនិញ</span>
+                                <span class="label-zh">发货人签字</span>
+                            </div>
+                            <div class="signature-line"></div>
+                        </div>
+                        <div class="signature-box">
+                            <div class="label-group w-full">
+                                <span class="label-km">អ្នកទទួលទំនិញ</span>
+                                <span class="label-zh">收货人签字</span>
+                            </div>
+                            <div class="signature-line"></div>
+                        </div>
+                        <div class="signature-box">
+                            <div class="label-group w-full">
+                                <span class="label-km">អ្នកពិនិត្យទំនិញ</span>
+                                <span class="label-zh">检查员签字</span>
+                            </div>
+                            <div class="signature-line"></div>
+                        </div>
+                    </div>
+                </div>`;
+
+                if (index < themes.length - 1) {
+                    htmlOutput += '<div class="cut-line"></div>';
+                }
+            });
+
+            return htmlOutput;
+        }
+
+        /**
+         * Main Execution
+         */
+        async function init() {
+            try {
+                async function fetchData() {
+                    // Simulating an API call
+                    const logCode = new URLSearchParams(window.location.search).get('code') || '';
+                    const response = await fetch(`/wl/${logCode}`);
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return await response.json();
+                }
+                const responseData = await fetchData();
+                const splitData = responseData.dataExcel.split('\t');
+
+                // Map the async data
+                const fields = {
+                    container: splitData[0],
+                    itemName: splitData[1],
+                    billNumber: splitData[2],
+                    quantity: splitData[5],
+                    volume: splitData[6],
+                    weight: splitData[7],
+                    totalPrice: responseData.data.total
+                };
+
+                // Render content
+                const container = document.getElementById('main-content');
+                container.innerHTML = generateFormHtml(fields);
+
+                // Switch visibility
+                document.getElementById('loader').style.display = 'none';
+                container.style.display = 'flex';
+
+            } catch (error) {
+                console.error("Error loading data:", error);
+                document.getElementById('loader').innerText = "បរាជ័យក្នុងការទាញយកទិន្នន័យ (Failed to load data)";
+            }
+        }
+
+        // Start initialization on window load
+        window.onload = init;
+    </script>
+</body>
+</html>
