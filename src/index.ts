@@ -332,15 +332,50 @@ const app = new Elysia({
     }
 
     let dataExcel = '';
-    try {
-      const dataCaptions = wlb.generateCaptions(
-        logCode,
-        data,
-        isTrackingNumber
-      );
-      dataExcel = dataCaptions.dataExcel;
-    } catch (error: any) {
-      console.error('Error generating captions:', error.message);
+    if (data) {
+      const goods_numbers =
+        'goods_numbers' in data &&
+        Array.isArray(data.goods_numbers) &&
+        data.goods_numbers;
+      const volume = Number(data.volume).toFixed(3);
+      let total_goods_number = 0;
+      let total_volume_records = 0;
+      const volume_records = data.volume_record
+        .split('<br>')
+        .filter(Boolean)
+        .map((v) => {
+          v = v.includes('=') ? v.split('=')[0] : v;
+          v = /\*|\-/.test(v) ? v.replace(/\*|\-/g, 'x') : v;
+          const volumes = v.split('x');
+          const num = Number(volumes[3] || 1);
+          total_goods_number += num;
+          const total = volumes
+            .reduce((acc, p) => acc * Number(p), 1)
+            .toFixed(3);
+          total_volume_records += Number(total);
+          return `\t\t\t${v} = ${total}`;
+        });
+
+      const isSplitting = goods_numbers && goods_numbers.length > 1;
+      let warehousingRemarks = data.warehousingremarks || '';
+      let [container_code, ...container_date] = data.container_num?.split('-');
+      if (container_date?.[0]?.startsWith('0')) {
+        container_date[0] = container_date[0].substring(1);
+      }
+
+      if (warehousingRemarks) {
+        const translatedRemarks = warehousingRemarks
+          .replace(/托/g, 'ប៉ាឡែត')
+          .replace(/件/g, 'ដុំ');
+
+        warehousingRemarks = `\t\t\t\t☘\t\t\t\t(${translatedRemarks})`;
+      }
+      const goods_name = data.goods_name
+        .split(',')
+        .map((v) => v.split('(')[0].trim())
+        .join(',');
+      dataExcel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
+      data.excel_format_data = dataExcel;
     }
 
     return {
