@@ -9,7 +9,7 @@
     <style>
         :root {
             --brand-red: #f87171;
-            --brand-blue: #60a5fa;
+            --brand-blue: lch(66.75% 48.95 274.13);
             --brand-green: #4ade80;
             --blue-pen: #2563eb;
         }
@@ -24,15 +24,151 @@
             font-family: 'Kantumruy Pro', sans-serif;
         }
 
+        /* Control Panel */
+        #control-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            z-index: 1000;
+            width: 320px;
+            border: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Modal Styles */
+        #batch-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .input-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #4b5563;
+            text-transform: uppercase;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: var(--brand-blue);
+        }
+
+        .btn-fetch {
+            background-color: var(--brand-blue);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-icon {
+            padding: 10px;
+            border-radius: 8px;
+            background: #f3f4f6;
+            color: #4b5563;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .btn-icon:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .tooltip {
+            visibility: hidden;
+            width: 140px;
+            background-color: #1f2937;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -70px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 10px;
+        }
+
+        .btn-print {
+            background-color: #1f2937;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        /* Form Layout Styling */
         .page-container {
             width: 210mm;
-            height: 297mm;
+            min-height: 297mm;
             padding: 8mm;
             background: white;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             display: flex;
             flex-direction: column;
+            gap: 0;
+            margin: 40px 0;
+        }
+
+        /* Each shipment page wrapper */
+        .shipment-page {
+            width: 100%;
+            height: 281mm; /* Leave room for padding */
+            display: flex;
+            flex-direction: column;
             justify-content: space-between;
+            page-break-after: always;
+        }
+
+        .shipment-page:last-child {
+            page-break-after: auto;
         }
 
         .form-section {
@@ -43,7 +179,7 @@
             flex-direction: column;
             overflow: hidden;
             flex-grow: 1;
-            max-height: 92mm;
+            max-height: 90mm;
         }
 
         .cut-line {
@@ -71,19 +207,6 @@
         .stroke-soft-red { stroke: var(--brand-red) !important; }
         .stroke-soft-green { stroke: var(--brand-green) !important; }
 
-        .logo-section { display: flex; align-items: center; }
-        .logo-container {
-            background: white;
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            padding: 4px;
-        }
-
         .container-box {
             background: white;
             color: black;
@@ -100,13 +223,15 @@
             font-family: 'Poppins', sans-serif;
             font-weight: 600;
             color: var(--blue-pen);
+            min-width: 40px;
+            outline: none;
         }
 
         .grid-cell {
             border-bottom: 1.5px solid #000;
             border-right: 1.5px solid #000;
-            padding: 10px 12px;
-            height: 68px;
+            padding: 8px 12px;
+            height: 64px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -120,20 +245,20 @@
             justify-content: center;
             flex-shrink: 0;
             width: 42%;
-            gap: 4px;
+            gap: 2px;
         }
 
-        .label-km { font-size: 0.95rem; color: #000; font-weight: 700; line-height: 1.1; }
-        .label-zh { font-size: 0.85rem; color: #444; line-height: 1.1; }
+        .label-km { font-size: 0.9rem; color: #000; font-weight: 700; line-height: 1.1; }
+        .label-zh { font-size: 0.8rem; color: #444; line-height: 1.1; }
 
         .value-text {
             font-family: 'Poppins', sans-serif;
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             font-weight: 600;
             color: var(--blue-pen);
             text-align: center;
             flex-grow: 1;
-            padding-left: 5px;
+            outline: none;
         }
 
         .sideways-lines {
@@ -152,84 +277,150 @@
         .signature-box {
             border-right: 1.5px solid #000;
             flex: 1;
-            padding: 12px;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            min-height: 120px;
+            min-height: 100px;
         }
 
-        .signature-box:last-child { border-right: none; }
-
         .signature-line {
-            border-bottom: 2px dashed #444;
+            border-bottom: 1.5px dashed #444;
             margin-top: auto;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             width: 100%;
         }
 
-        /* Loading state styles */
-        #loader {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
+        .editable-field:hover { background-color: rgba(37, 99, 235, 0.05); cursor: text; }
+        .editable-field:focus { outline: 1px dashed var(--brand-blue); background-color: rgba(96, 165, 250, 0.1); }
 
         @media print {
-            body { background: white; padding: 0; margin: 0; }
-            .page-container { box-shadow: none; padding: 5mm; width: 210mm; height: 297mm; }
-            .header-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            #loader { display: none; }
+            body { background: rgb(196, 29, 29); padding: 0; margin: 0; }
+            #control-panel, #batch-modal { display: none !important; }
+            .page-container {
+                box-shadow: none;
+                padding: 0;
+                width: 210mm;
+                margin: 0;
+            }
+            .shipment-page {
+                height: 320mm;
+                padding: 0mm;
+            }
         }
     </style>
 </head>
 <body>
 
-    <div id="loader">កំពុងទាញយកទិន្នន័យ... (Fetching Data...)</div>
-    <div id="main-content" class="page-container" style="display: none;">
-        <!-- Forms will be injected here -->
+    <!-- Control Panel -->
+    <div id="control-panel">
+        <div class="flex gap-2 items-end">
+            <div class="input-group flex-1">
+                <label class="input-label">Shipment Code</label>
+                <input type="text" id="shipmentCode" class="input-field" placeholder="Enter code..." value="26020518085500">
+            </div>
+            <button onclick="toggleModal(true)" class="btn-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-files-icon lucide-files"><path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8"/><path d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z"/><path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1"/></svg>
+                <span class="tooltip">Update multiple data</span>
+            </button>
+        </div>
+
+        <button id="fetchBtn" onclick="handleSingleFetch()" class="btn-fetch">Update Form</button>
+        <div class="text-[10px] text-gray-400 text-center italic">Editable fields will sync across colored forms on the same page.</div>
+        <hr class="my-1 border-gray-100">
+        <button onclick="window.print()" class="btn-print">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Print Documents
+        </button>
+    </div>
+
+    <!-- Batch Modal -->
+    <div id="batch-modal" onclick="if(event.target === this) toggleModal(false)">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold mb-4">Batch Shipment Import</h2>
+            <div class="input-group mb-4">
+                <label class="input-label">Multiple Codes (One per line)</label>
+                <textarea id="batchCodes" class="input-field h-40 font-mono" placeholder="260320092946&#10;260320092947&#10;..."></textarea>
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button onclick="toggleModal(false)" class="px-4 py-2 text-gray-600 font-semibold">Cancel</button>
+                <button id="batchUpdateBtn" onclick="handleBatchFetch()" class="btn-fetch px-6">Update All Forms</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container for A4 -->
+    <div id="main-content" class="page-container">
+        <!-- Shipment pages will be injected here -->
     </div>
 
     <script>
         /**
-         * Simulates an async fetch request
+         * Mock Async Fetch Function
          */
-        async function fetchLogisticsData() {
-            // In real use: const response = await fetch('YOUR_API_ENDPOINT');
-            // return await response.json();
+         async function fetchData(code) {
+                 // fix sometime long response data for network issue, just return null if response is not ok, and handle it in upper function
 
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    resolve({
-                        "dataExcel": "3.21A\t黄智略-柯志鹏\t260320092946\t2026-03-20\t灯具\t9\t130.5\t1.007\t1.007",
-                        "total": 123.8
-                    });
-                }, 800); // Simulate network delay
-            });
+                    code = code.replace(/[^\d\n]/g, '').trim()
+
+                    return fetch(`/wl/${code}`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(res => {
+                            if (!res.ok) throw new Error(`Failed to fetch data for code: ${code}`);
+                            return res.json();
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            return Promise.reject(`Error fetching data for code: ${code}`);
+                        });
+                }
+        async function fetchLogisticsData(code) {
+            return fetchData(code)
+            // return new Promise((resolve) => {
+//                 setTimeout(() => {
+//                     resolve({
+//                         dataExcel: `3.21A\tItem for ${code}\t${code}\t2026-03-20\tType\t10\t120.5\t1.5\t1.5`,
+//                         total: (Math.random() * 200 + 50).toFixed(2)
+//                     });
+//                 }, 400);
+//             });
         }
 
         /**
-         * Generates the HTML for the form sections based on data
+         * Utility for chunking array for parallel processing
          */
-        function generateFormHtml(fields) {
+        async function processInChunks(array, chunkSize, processor) {
+            const results = [];
+            for (let i = 0; i < array.length; i += chunkSize) {
+                const chunk = array.slice(i, i + chunkSize);
+                const chunkResults = await Promise.all(chunk.map(item => processor(item)));
+                results.push(...chunkResults);
+            }
+            return results;
+        }
+
+        /**
+         * Page Template Generator
+         */
+        function createShipmentPageHtml(fields, shipmentId) {
             const themes = [
                 { bg: 'bg-soft-blue', stroke: 'stroke-soft-blue' },
                 { bg: 'bg-soft-red', stroke: 'stroke-soft-red' },
                 { bg: 'bg-soft-green', stroke: 'stroke-soft-green' }
             ];
 
-            let htmlOutput = '';
-
-            themes.forEach((theme, index) => {
-                htmlOutput += `
+            let sectionsHtml = '';
+            themes.forEach((theme, idx) => {
+                sectionsHtml += `
                 <div class="form-section">
                     <div class="header-bar ${theme.bg}">
-                        <div class="logo-section">
-                            <div class="logo-container">
-                                <svg class="w-full h-full" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                        <div class="flex items-center">
+                            <div class="bg-white rounded-full w-8 h-8 flex items-center justify-center mr-2 p-1">
+                                <svg class="w-full h-full" viewBox="0 0 100 100">
                                     <circle cx="50" cy="50" r="45" fill="none" class="${theme.stroke}" stroke-width="10"/>
                                     <path d="M25 35 L40 75 L50 50 L60 75 L75 35" fill="none" class="${theme.stroke}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
@@ -238,133 +429,145 @@
                         </div>
                         <div class="container-box">
                             <span class="font-bold">ទូរ:</span>
-                            <span class="container-value">${fields.container}</span>
+                            <span class="container-value editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="container">${fields.container}</span>
                         </div>
                     </div>
-                    <div class="flex">
+                    <div class="flex flex-1">
                         <div class="sideways-lines"></div>
                         <div class="flex-1 grid grid-cols-12">
                             <div class="grid-cell col-span-8">
-                                <div class="label-group">
-                                    <span class="label-km">លេខបុង</span>
-                                    <span class="label-zh">体积描述</span>
-                                </div>
-                                <div class="value-text">${fields.billNumber}</div>
+                                <div class="label-group"><span class="label-km">លេខបុង</span><span class="label-zh">体积描述</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="billNumber">${fields.billNumber}</div>
                             </div>
                             <div class="grid-cell col-span-4 no-right-border">
-                                <div class="label-group">
-                                    <span class="label-km">ចំនួនកញ្ចប់</span>
-                                    <span class="label-zh">件数</span>
-                                </div>
-                                <div class="value-text">${fields.quantity}</div>
+                                <div class="label-group"><span class="label-km">ចំនួនកញ្ចប់</span><span class="label-zh">件数</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="quantity">${fields.quantity}</div>
                             </div>
                             <div class="grid-cell col-span-8">
-                                <div class="label-group">
-                                    <span class="label-km">ឈ្មោះទំនិញ</span>
-                                    <span class="label-zh">货物品名</span>
-                                </div>
-                                <div class="value-text">${fields.itemName}</div>
+                                <div class="label-group"><span class="label-km">ឈ្មោះទំនិញ</span><span class="label-zh">货物品名</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="itemName">${fields.itemName}</div>
                             </div>
                             <div class="grid-cell col-span-4 no-right-border">
-                                <div class="label-group">
-                                    <span class="label-km">ម៉ែត្រគូប</span>
-                                    <span class="label-zh">体积 (m³)</span>
-                                </div>
-                                <div class="value-text">${fields.volume}</div>
+                                <div class="label-group"><span class="label-km">ម៉ែត្រគូប</span><span class="label-zh">体积 (m³)</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="volume">${fields.volume}</div>
                             </div>
-                            <div class="grid-cell col-span-8" style="border-bottom: none;">
-                                <div class="label-group">
-                                    <span class="label-km">ទឹកប្រាក់សរុប</span>
-                                    <span class="label-zh">费用合计</span>
-                                </div>
-                                <div class="value-text">$ ${fields.totalPrice}</div>
+                            <div class="grid-cell col-span-8 border-b-0">
+                                <div class="label-group"><span class="label-km">ទឹកប្រាក់សរុប</span><span class="label-zh">费用合计</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="totalPrice">$ ${fields.totalPrice}</div>
                             </div>
-                            <div class="grid-cell col-span-4 no-right-border" style="border-bottom: none;">
-                                <div class="label-group">
-                                    <span class="label-km">ទម្ងន់</span>
-                                    <span class="label-zh">重量 (kg)</span>
-                                </div>
-                                <div class="value-text">${fields.weight}</div>
+                            <div class="grid-cell col-span-4 no-right-border border-b-0">
+                                <div class="label-group"><span class="label-km">ទម្ងន់</span><span class="label-zh">重量 (kg)</span></div>
+                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="weight">${fields.weight}</div>
                             </div>
                         </div>
                     </div>
                     <div class="signature-area">
                         <div class="signature-box">
-                            <div class="label-group w-full">
-                                <span class="label-km">អ្នកចេញទំនិញ</span>
-                                <span class="label-zh">发货人签字</span>
-                            </div>
+                            <div class="label-km">អ្នកចេញទំនិញ</div><div class="label-zh">发货人签字</div>
                             <div class="signature-line"></div>
                         </div>
                         <div class="signature-box">
-                            <div class="label-group w-full">
-                                <span class="label-km">អ្នកទទួលទំនិញ</span>
-                                <span class="label-zh">收货人签字</span>
-                            </div>
+                            <div class="label-km">អ្នកទទួលទំនិញ</div><div class="label-zh">收货人签字</div>
                             <div class="signature-line"></div>
                         </div>
-                        <div class="signature-box">
-                            <div class="label-group w-full">
-                                <span class="label-km">អ្នកពិនិត្យទំនិញ</span>
-                                <span class="label-zh">检查员签字</span>
-                            </div>
+                        <div class="signature-box border-r-0">
+                            <div class="label-km">អ្នកពិនិត្យទំនិញ</div><div class="label-zh">检查员签字</div>
                             <div class="signature-line"></div>
                         </div>
                     </div>
-                </div>`;
-
-                if (index < themes.length - 1) {
-                    htmlOutput += '<div class="cut-line"></div>';
-                }
+                </div>
+                ${idx < themes.length - 1 ? '<div class="cut-line"></div>' : ''}
+                `;
             });
 
-            return htmlOutput;
+            return `<div class="shipment-page">${sectionsHtml}</div>`;
         }
 
         /**
-         * Main Execution
+         * Handlers
          */
-        async function init() {
-            try {
-                async function fetchData() {
-                    // Simulating an API call
-                    const logCode = new URLSearchParams(window.location.search).get('code') || '';
-                    const response = await fetch(`/wl/${logCode}`);
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return await response.json();
-                }
-                const responseData = await fetchData();
-                const splitData = responseData.dataExcel.split('\t');
-
-                // Map the async data
-                const fields = {
-                    container: splitData[0],
-                    itemName: splitData[1],
-                    billNumber: splitData[2],
-                    quantity: splitData[5],
-                    volume: splitData[6],
-                    weight: splitData[7],
-                    totalPrice: responseData.data.total
-                };
-
-                // Render content
-                const container = document.getElementById('main-content');
-                container.innerHTML = generateFormHtml(fields);
-
-                // Switch visibility
-                document.getElementById('loader').style.display = 'none';
-                container.style.display = 'flex';
-
-            } catch (error) {
-                console.error("Error loading data:", error);
-                document.getElementById('loader').innerText = "បរាជ័យក្នុងការទាញយកទិន្នន័យ (Failed to load data)";
-            }
+        function toggleModal(show) {
+            document.getElementById('batch-modal').style.display = show ? 'flex' : 'none';
         }
 
-        // Start initialization on window load
-        window.onload = init;
+        async function handleSingleFetch() {
+            const code = document.getElementById('shipmentCode').value.trim();
+            if(!code) return alert("Enter a code");
+
+            const btn = document.getElementById('fetchBtn');
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+
+            const data = await fetchLogisticsData(code);
+            if(!data) {
+                btn.disabled = false;
+                btn.innerText = "Update Form";
+                return alert("Failed to fetch data for the provided code.");
+            }
+            const fields = parseData(data);
+
+            document.getElementById('main-content').innerHTML = createShipmentPageHtml(fields, 0);
+            btn.disabled = false;
+            btn.innerText = "Update Form";
+        }
+
+        async function handleBatchFetch() {
+            const codes = document.getElementById('batchCodes').value.split('\n').map(c => c.trim()).filter(c => c);
+            if(codes.length === 0) return alert("Enter at least one code");
+
+            const btn = document.getElementById('batchUpdateBtn');
+            btn.disabled = true;
+            btn.innerText = "Fetching Batch...";
+
+            // Process in chunks of 4 to avoid long waiting
+            const results = await processInChunks(codes, 4, (code) => fetchLogisticsData(code));
+
+            let html = '';
+            results.forEach((res, index) => {
+                if (!res) return;
+                const fields = parseData(res);
+                html += createShipmentPageHtml(fields, index);
+            });
+
+            document.getElementById('main-content').innerHTML = html;
+
+            toggleModal(false);
+            btn.disabled = false;
+            btn.innerText = "Update All Forms";
+        }
+
+        function parseData(res) {
+            const split = res.dataExcel.split('\t');
+            let weight = (Number(split[6]) || 0).toFixed(1) + '0';
+            if (weight.endsWith('.00')) weight = weight.replace('.00', '');
+            return {
+                container: split[0] || '---',
+                itemName: split[1] || '---',
+                billNumber: split[2] || '---',
+                quantity: split[5] || '0',
+                volume: split[7] || '0',
+                weight: weight || '0.00',
+                totalPrice: Number(res.data.total).toFixed(1) + '0' || '0.00'
+            };
+        }
+
+        // Global sync for editable fields within the same shipment page
+        document.addEventListener('input', (e) => {
+            if (e.target.classList.contains('editable-field')) {
+                const field = e.target.getAttribute('data-field');
+                const shipmentId = e.target.getAttribute('data-shipment');
+                const newValue = e.target.innerText;
+
+                // Only sync fields that belong to the SAME shipment page
+                const sameShipmentFields = document.querySelectorAll(`[data-shipment="${shipmentId}"][data-field="${field}"]`);
+                sameShipmentFields.forEach(el => {
+                    if (el !== e.target) el.innerText = newValue;
+                });
+            }
+        });
+
+        // Initialize with default
+        window.onload = handleSingleFetch;
     </script>
 </body>
 </html>

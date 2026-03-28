@@ -538,14 +538,16 @@
 
         function parseData(res) {
             const split = res.dataExcel.split('\t');
+            let weight = (Number(split[6]) || 0).toFixed(1) + '0';
+            if (weight.endsWith('.00')) weight = weight.replace('.00', '');
             return {
                 container: split[0] || '---',
                 itemName: split[1] || '---',
                 billNumber: split[2] || '---',
                 quantity: split[5] || '0',
-                volume: split[6] || '0',
-                weight: (Number(split[7]) || 0).toFixed(2) || '0.00',
-                totalPrice: Number(res.data.total).toFixed(2) || '0.00'
+                volume: split[7] || '0',
+                weight: weight || '0.00',
+                totalPrice: Number(res.data.total).toFixed(1) + '0' || '0.00'
             };
         }
 
