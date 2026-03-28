@@ -243,6 +243,10 @@ const app = new Elysia({
     // read from search.html and return as web page
     return file(path.join(publicPath, 'search.html'));
   })
+  .get('/print', ({ html }) => {
+    // read from search.html and return as web page
+    return file(path.join(publicPath, 'print.html'));
+  })
   .get('/wl/set-cookie', async ({ query, set }) => {
     set.status = 200;
     let cookie = query.cookie || '';
