@@ -243,7 +243,10 @@ const app = new Elysia({
     // read from search.html and return as web page
     return file(path.join(publicPath, 'search.html'));
   })
-  .get('/print', ({ html }) => {
+  .get('/print', ({ query }) => {
+    if (query.token !== process.env.ADMIN_ID) {
+      return { message: 'Unauthorized' };
+    }
     // read from search.html and return as web page
     return file(path.join(publicPath, 'print.html'));
   })
@@ -336,12 +339,15 @@ const app = new Elysia({
     }
 
     let dataExcel = '';
+    let splitting: string[] = [];
     if (data) {
       const goods_numbers =
         'goods_numbers' in data &&
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
       const volume = Number(data.volume).toFixed(3);
+      const weight =
+        data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2);
       let total_goods_number = 0;
       let total_volume_records = 0;
       const volume_records = data.volume_record
@@ -361,6 +367,9 @@ const app = new Elysia({
         });
 
       const isSplitting = goods_numbers && goods_numbers.length > 1;
+      if (isSplitting) {
+        splitting = goods_numbers;
+      }
       let warehousingRemarks = data.warehousingremarks || '';
       let [container_code, ...container_date] = data.container_num?.split('-');
       if (container_date?.[0]?.startsWith('0')) {
@@ -378,7 +387,7 @@ const app = new Elysia({
         .split(',')
         .map((v) => v.split('(')[0].trim())
         .join(',');
-      dataExcel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
+      dataExcel = `${container_date.join('.').replace('.0', '.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${weight}\t${volume}\t${volume}`;
       data.excel_format_data = dataExcel;
     }
 
@@ -387,6 +396,7 @@ const app = new Elysia({
       logCode,
       data,
       dataExcel,
+      splitting,
     };
   })
   .get('/wl/display-image', ({ query, html }) => {

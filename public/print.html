@@ -144,11 +144,25 @@
             cursor: pointer;
         }
 
+        #logging {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #4b5563;
+            max-height: 150px;
+            overflow-y: auto;
+            .btn-print {
+                margin-top: 8px;
+                padding: 6px 12px;
+                font-size: 0.75rem;
+                background-color: #2563eb;
+            }
+        }
+
         /* Form Layout Styling */
         .page-container {
             width: 210mm;
             min-height: 297mm;
-            padding: 8mm;
+            padding: 4mm;
             background: white;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             display: flex;
@@ -156,11 +170,10 @@
             gap: 0;
             margin: 40px 0;
         }
-
         /* Each shipment page wrapper */
         .shipment-page {
             width: 100%;
-            height: 281mm; /* Leave room for padding */
+            height: 300mm; /* Leave room for padding */
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -261,6 +274,12 @@
             outline: none;
         }
 
+        [data-field=container-splitting] {
+            font-size: 0.8rem;
+            color: #748fc7;
+            margin-left: 4px;
+        }
+
         .sideways-lines {
             width: 35px;
             background: linear-gradient(to bottom, transparent 95%, #eee 100%);
@@ -305,7 +324,7 @@
             }
             .shipment-page {
                 height: 297mm;
-                padding: 8mm;
+                padding: 4mm;
             }
         }
     </style>
@@ -332,6 +351,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
             Print Documents
         </button>
+        <div id="logging"></div>
     </div>
 
     <!-- Batch Modal -->
@@ -359,35 +379,59 @@
          * Mock Async Fetch Function
          */
          async function fetchData(code) {
-                 // fix sometime long response data for network issue, just return null if response is not ok, and handle it in upper function
+            code = code.replace(/[^\d\n]/g, '').trim()
 
-                    code = code.replace(/[^\d\n]/g, '').trim()
-
-                    return fetch(`/wl/${code}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                        .then(res => {
-                            if (!res.ok) throw new Error(`Failed to fetch data for code: ${code}`);
-                            return res.json();
-                        })
-                        .catch(err => {
-                            console.error(err);
-                            return Promise.reject(`Error fetching data for code: ${code}`);
-                        });
+            return fetch(`/wl/${code}`, {
+                method: 'GET',
+                headers: {
+                    "accept": "*/*",
+                    "accept-language": "en-US,en;q=0.9",
+                    'Content-Type': 'application/json'
                 }
+            })
+                .then(res => {
+                    if (!res.ok) {
+                        log('❌', code);
+                        throw new Error(`Failed to fetch data for code: ${code}`);
+                    }
+                    log(`✅`, code);
+                    return res.json();
+                })
+                .catch(err => {
+                    console.error(err);
+                    log('❌', code);
+                    return Promise.reject(`Error fetching data for code: ${code}`);
+                });
+        }
+        var loaded = false;
+        var cache = {
+            logging: {},
+        };
+        function log(message, code) {
+            cache.logging[code] = `${message} ${code}`;
+            // add button to clear logs
+            document.getElementById('logging').innerHTML = Object.values(cache.logging).map(log => `<div>${log}</div>`).join('') + `<div><button onclick="clearLogs()" class="btn-print">Clear</button></div>`;
+        }
+        function clearLogs() {
+            cache.logging = {};
+            document.getElementById('logging').innerHTML = Object.values(cache.logging).map(log => `<div>${log}</div>`).join('');
+        }
         async function fetchLogisticsData(code) {
-            return fetchData(code)
-            // return new Promise((resolve) => {
-//                 setTimeout(() => {
-//                     resolve({
-//                         dataExcel: `3.21A\tItem for ${code}\t${code}\t2026-03-20\tType\t10\t120.5\t1.5\t1.5`,
-//                         total: (Math.random() * 200 + 50).toFixed(2)
-//                     });
-//                 }, 400);
-//             });
+            if (loaded) {
+                return fetchData(code);
+            }
+            loaded = true;
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve({
+                        dataExcel: `3.21A\tCustomer Code\t${code}\t2026-03-20\tType\t10\t120.5\t1.5\t1.5`,
+                        splitting: ['3','2','3'],
+                        data: {
+                            total: (Math.random() * 200 + 50).toFixed(2)
+                        }
+                    });
+                }, 400);
+            });
         }
 
         /**
@@ -429,7 +473,7 @@
                         </div>
                         <div class="container-box">
                             <span class="font-bold">ទូរ:</span>
-                            <span class="container-value editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="container">${fields.container}</span>
+                            <span class="container-value editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="container">${fields.container}</span>
                         </div>
                     </div>
                     <div class="flex flex-1">
@@ -437,27 +481,27 @@
                         <div class="flex-1 grid grid-cols-12">
                             <div class="grid-cell col-span-8">
                                 <div class="label-group"><span class="label-km">លេខបុង</span><span class="label-zh">体积描述</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="billNumber">${fields.billNumber}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="billNumber">${fields.billNumber}</div>
                             </div>
                             <div class="grid-cell col-span-4 no-right-border">
                                 <div class="label-group"><span class="label-km">ចំនួនកញ្ចប់</span><span class="label-zh">件数</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="quantity">${fields.quantity}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="quantity">${fields.quantity}${fields.splitting.length && fields.splitting.length <= 5 ? `<span data-field="container-splitting">(${fields.splitting})</span>` : ''}</div>
                             </div>
                             <div class="grid-cell col-span-8">
                                 <div class="label-group"><span class="label-km">ឈ្មោះទំនិញ</span><span class="label-zh">货物品名</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="itemName">${fields.itemName}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="itemName">${fields.itemName}</div>
                             </div>
                             <div class="grid-cell col-span-4 no-right-border">
                                 <div class="label-group"><span class="label-km">ម៉ែត្រគូប</span><span class="label-zh">体积 (m³)</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="volume">${fields.volume}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="volume">${fields.volume}</div>
                             </div>
                             <div class="grid-cell col-span-8 border-b-0">
                                 <div class="label-group"><span class="label-km">ទឹកប្រាក់សរុប</span><span class="label-zh">费用合计</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="totalPrice">$ ${fields.totalPrice}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="totalPrice">$ ${fields.totalPrice}</div>
                             </div>
                             <div class="grid-cell col-span-4 no-right-border border-b-0">
                                 <div class="label-group"><span class="label-km">ទម្ងន់</span><span class="label-zh">重量 (kg)</span></div>
-                                <div class="value-text editable-field" contenteditable="true" data-shipment="${shipmentId}" data-field="weight">${fields.weight}</div>
+                                <div class="value-text editable-field" contenteditable="true" onkeydown="return event.key !== 'Enter';" data-shipment="${shipmentId}" data-field="weight">${fields.weight}</div>
                             </div>
                         </div>
                     </div>
@@ -538,6 +582,8 @@
 
         function parseData(res) {
             const split = res.dataExcel.split('\t');
+            let volume = (Number(split[6]) || 0).toFixed(3) + '0';
+            if (volume.endsWith('.00')) weight = weight.replace('.00', '');
             let weight = (Number(split[6]) || 0).toFixed(1) + '0';
             if (weight.endsWith('.00')) weight = weight.replace('.00', '');
             return {
@@ -547,7 +593,8 @@
                 quantity: split[5] || '0',
                 volume: split[7] || '0',
                 weight: weight || '0.00',
-                totalPrice: Number(res.data.total).toFixed(1) + '0' || '0.00'
+                totalPrice: Number(res.data.total).toFixed(1) + '0' || '0.00',
+                splitting: res.splitting || []
             };
         }
 

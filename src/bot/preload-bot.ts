@@ -455,6 +455,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
     let maxFullCaption: string | undefined;
     let caption: string | undefined;
     let dataExcel = '';
+    let splitting = [];
 
     if (data) {
       const goods_numbers =
@@ -462,6 +463,8 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         Array.isArray(data.goods_numbers) &&
         data.goods_numbers;
       const volume = Number(data.volume).toFixed(3);
+      const weight =
+        data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2);
       let total_goods_number = 0;
       let total_volume_records = 0;
       const volume_records = data.volume_record
@@ -481,6 +484,9 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         });
 
       const isSplitting = goods_numbers && goods_numbers.length > 1;
+      if (isSplitting) {
+        splitting = goods_numbers;
+      }
       let warehousingRemarks = data.warehousingremarks || '';
       let [container_code, ...container_date] = data.container_num?.split('-');
       if (container_date?.[0]?.startsWith('0')) {
@@ -517,9 +523,7 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         `- កូដអីវ៉ាន់: #${data.mark_name}\n`,
         `- ចំនួន: ${data.goods_number}${warehousingRemarks}\n`,
         isSplitting ? `- ចំនួនបែងចែកទូរ: [${goods_numbers.join(', ')}]\n` : '',
-        `- ទម្ងន់: ${
-          data.weight.length <= 5 ? data.weight : Number(data.weight).toFixed(2)
-        }kg\n`,
+        `- ទម្ងន់: ${weight}kg\n`,
         `- ម៉ែត្រគូបសរុប: ${volume}m³`,
         `${
           data.volume_record?.trim()
@@ -566,14 +570,14 @@ export class WLCheckerBotSendData extends WLCheckerBotPreLoad {
         `- ផ្សេងៗ: ${data.desc?.replace(/到達|到达/g, '$&(មកដល់)') || 'N/A'}\n`
       );
       if (this.asAdmin) {
-        dataExcel = `${container_date.join('.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${data.weight}\t${data.volume}\t${volume}`;
+        dataExcel = `${container_date.join('.').replace('.0', '.') || 'N/A'}\t${data.mark_name}\t${data.logcode}\t${JSON.parse(data.expresstracking)[0]?.time.split(' ')?.[0].trim()}\t${goods_name}\t${data.goods_number}\t${weight}\t${volume}\t${volume}`;
         data.excel_format_data = dataExcel;
         fullCaption += `\n\n🧾 Excel Format Data:\n${pm.c(dataExcel)}\n`;
       }
       maxFullCaption = fullCaption.substring(0, MAX_TEXT_LENGTH);
       caption = fullCaption.substring(0, MAX_CAPTION_LENGTH);
     }
-    return { caption, fullCaption, maxFullCaption, dataExcel };
+    return { caption, fullCaption, maxFullCaption, dataExcel, splitting };
   }
   async sendFullCationNoImageFound(
     chat: TelegramBot.Chat,
