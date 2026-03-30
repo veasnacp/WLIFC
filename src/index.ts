@@ -240,6 +240,9 @@ const app = new Elysia({
   .get('/favicon.ico', () => file(path.join(publicPath, 'favicon.ico')))
   .get('/bot.js', () => file(path.join(publicPath, 'bot.js')))
   .get('/search', ({ html }) => {
+    if (!IS_DEV) {
+      return { message: 'Unauthorized' };
+    }
     // read from search.html and return as web page
     return file(path.join(publicPath, 'search.html'));
   })
